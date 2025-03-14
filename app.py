@@ -49,10 +49,10 @@ def login():
         rows = cursor.fetchall()
         if len(rows)>0:
             print("true")
-            return {'reponse':dict(rows)}
+            return jsonify({"response": {"username": rows[0][0], "password": rows[0][1]}})
         else:
             print('Flase')
-            return {"response": None}
+            return jsonify({"response": None})
         
     except Exception as e:
         
