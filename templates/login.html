@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Login - TalkMed</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+  <style>
+    :root {
+      --primary-color: #DE89BE;
+      --primary-hover: #40434E;
+      --bg-gradient: linear-gradient(135deg, #FFFCF2, #ffffff);
+      --text-color: #070707;
+    }
+    body {
+      font-family: 'Montserrat', sans-serif;
+      background: var(--bg-gradient);
+      color: var(--text-color);
+      margin: 0;
+      padding: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      height: 100vh;
+    }
+    .login-container {
+      max-width: 400px;
+      background: white;
+      padding: 30px;
+      border-radius: 10px;
+      box-shadow: 0 4px 10px rgba(0, 0, 0, 0.1);
+      text-align: center;
+    }
+    h2 {
+      color: var(--primary-color);
+      font-weight: 600;
+      margin-bottom: 20px;
+    }
+    .btn-primary {
+      background-color: var(--primary-color);
+      border: none;
+      width: 100%;
+      padding: 12px;
+      border-radius: 50px;
+      transition: background 0.3s ease;
+    }
+    .btn-primary:hover {
+      background-color: var(--primary-hover);
+    }
+    .btn-back {
+      background-color: var(--primary-hover);
+      color: white;
+      border: none;
+      width: 100%;
+      padding: 10px;
+      border-radius: 50px;
+      margin-top: 10px;
+      text-decoration: none;
+      display: inline-block;
+      text-align: center;
+    }
+    .btn-back:hover {
+      background-color: var(--primary-color);
+    }
+  </style>
+</head>
+<body>
+  <div class="login-container">
+    <h2>Login to TalkMed</h2>
+    {% if error %}
+      <div class="alert alert-danger">{{ error }}</div>
+    {% endif %}
+    <form action="/login" method="POST">
+      <div class="mb-3">
+        <input type="email" id="email" name="email" class="form-control" placeholder="Email" required>
+      </div>
+      <div class="mb-3">
+        <input type="password" id="password" name="password" class="form-control" placeholder="Password" required>
+      </div>
+      <button type="submit" class="btn btn-primary">Login</button>
+    </form>
+    <a href="/" class="btn btn-back">Back to Home</a>
+  </div>
+</body>
+</html>
