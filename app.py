@@ -43,13 +43,18 @@ def login():
         conn = get_db_connection()
         print('Connection established')
         cursor = conn.cursor()
-        SQL_QUERY = "SELECT username, password FROM doctors WHERE username = ? AND password = ?"
+        SQL_QUERY = "SELECT * FROM doctors WHERE username = ? AND password = ?"
         cursor.execute(SQL_QUERY, [username, password ])
         # columns = [column[0] for column in cursor.description]
         rows = cursor.fetchall()
+        
         if len(rows)>0:
             print("true")
-            return jsonify({"response": {"username": rows[0][0], "password": rows[0][1]}})
+            columns = ["id", "username", "password", "email_id", "mobile", "first_name", "middle_name", "last_name", "role"]
+            # Convert the row into a dictionary
+            doctor_data = dict(zip(columns, rows[0]))
+
+            return  jsonify({"response": doctor_data})
         else:
             print('Flase')
             return jsonify({"response": None})
