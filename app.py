@@ -18,9 +18,9 @@ def get_db_connection():
     
     print(uid, pwd)
 
-    uid = "CloudSAce057eeb"
-    pwd = "Gbsssrdjk@#6"
-    print(uid, pwd)
+    uid_hard = "CloudSAce057eeb"
+    pwdhard = "Gbsssrdjk@#6"
+    print(uid_hard, pwdhard)
 
     server = "Server="+str(server_name)
     db = "Database="+str(db_name)
