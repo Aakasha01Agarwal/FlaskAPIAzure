@@ -33,6 +33,7 @@ def login(recordid = '2', name = 'Akash'):
     conn = None
     try:
         conn = get_db_connection()
+        print('Connection established')
         cursor = conn.cursor()
         SQL_QUERY = "SELECT RecordID, PatientName FROM PatientRecords WHERE RecordID = ? AND PatientName = ?"
         cursor.execute(SQL_QUERY, [recordid, name ])
@@ -46,7 +47,7 @@ def login(recordid = '2', name = 'Akash'):
             return {"response": None}
         
     except Exception as e:
-        print(e)
+        
         print("i am here")
         return "There is some error", 500
     finally:
