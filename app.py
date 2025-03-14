@@ -46,7 +46,7 @@ def login(recordid = '2', name = 'Akash'):
             return {"response": None}
         
     except Exception as e:
-        return "Error retrieving records", 500
+        return e, 500
     finally:
         if cursor:
             cursor.close()
