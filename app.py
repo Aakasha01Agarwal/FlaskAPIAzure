@@ -15,8 +15,8 @@ def get_db_connection():
     db_name = "TalkMed-db"
     uid = os.environ.get("AZURE_UID")
     pwd = os.environ.get("AZURE_PASSWORD")
-    uid = "CloudSAce057eeb"
-    pwd = "Gbsssrdjk@#6"
+    # uid = "CloudSAce057eeb"
+    # pwd = "Gbsssrdjk@#6"
     print(uid, pwd)
     server = "Server="+str(server_name)
     db = "Database="+str(db_name)
