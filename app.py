@@ -34,8 +34,8 @@ def get_db_connection():
 
 @app.route("/login", methods=["GET", "POST"])
 def login(): 
-    recordid = request.args.get('recordid')
-    name = request.args.get('name')
+    username = request.args.get('username')
+    password = request.args.get('password')
     print(recordid, name, '=========================')
     cursor = None
     conn = None
@@ -43,8 +43,8 @@ def login():
         conn = get_db_connection()
         print('Connection established')
         cursor = conn.cursor()
-        SQL_QUERY = "SELECT RecordID, PatientName FROM PatientRecords WHERE RecordID = ? AND PatientName = ?"
-        cursor.execute(SQL_QUERY, [recordid, name ])
+        SQL_QUERY = "SELECT username, password FROM doctors WHERE username = ? AND password = ?"
+        cursor.execute(SQL_QUERY, [username, password ])
         # columns = [column[0] for column in cursor.description]
         rows = cursor.fetchall()
         if len(rows)>0:
