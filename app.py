@@ -12,7 +12,7 @@ app = Flask(__name__)
 
 def get_db_connection():
     server_name = "tcp:talkmed-server.database.windows.net"
-    db_name = "TalkMed-db"
+    db_name = "doctor-details"
     uid = os.environ.get("AZURE_UID")
     pwd = os.environ.get("AZURE_PASSWORD")
     
