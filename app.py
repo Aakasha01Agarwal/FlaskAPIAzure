@@ -36,7 +36,7 @@ def get_db_connection():
 def login(): 
     username = request.args.get('username')
     password = request.args.get('password')
-    print(recordid, name, '=========================')
+    print(username, password, '=========================')
     cursor = None
     conn = None
     try:
