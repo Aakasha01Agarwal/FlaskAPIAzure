@@ -3,12 +3,10 @@ import os
 from flask import jsonify, Flask, render_template, request, redirect, url_for, session, flash
 import json
 from dotenv import load_dotenv
-from flask_cors import CORS
 
 
 load_dotenv()
 app = Flask(__name__)
-CORS(app)
 
 
 
@@ -17,6 +15,7 @@ def get_db_connection():
     db_name = "TalkMed-db"
     uid = os.environ.get("AZURE_UID")
     pwd = os.environ.get("AZURE_PASSWORD")
+    print(uid, pwd)
     server = "Server="+str(server_name)
     db = "Database="+str(db_name)
     uid_str = "Uid="+uid
