@@ -46,6 +46,8 @@ def login(recordid = '2', name = 'Akash'):
             return {"response": None}
         
     except Exception as e:
+        print(e)
+        print("i am here")
         return "There is some error", 500
     finally:
         if cursor:
