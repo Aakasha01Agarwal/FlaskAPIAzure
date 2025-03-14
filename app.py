@@ -33,7 +33,8 @@ def get_db_connection():
     return pyodbc.connect(connection_string)
 
 @app.route("/login", methods=["GET", "POST"])
-def login(recordid = '2', name = 'Akash'): 
+def login(recordid , name ): 
+    print(recordid, name, '=========================')
     cursor = None
     conn = None
     try:
