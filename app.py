@@ -34,8 +34,21 @@ def get_db_connection():
 
 @app.route("/login", methods=["GET", "POST"])
 def login(): 
-    username = request.args.get('username')
-    password = request.args.get('password')
+
+    if request.method == "GET":
+        username = request.args.get('username')
+        password = request.args.get('password')
+    else:  # POST method
+        data = request.json
+        username = data.get('username')
+        password = data.get('password')
+    
+    if not username or not password:
+        return jsonify({"error": "Missing username or password"}), 400
+
+
+    # username = request.args.get('username')
+    # password = request.args.get('password')
     print(username, password, '=========================')
     cursor = None
     conn = None
@@ -56,12 +69,12 @@ def login():
 
             return  jsonify({"response": doctor_data})
         else:
-            print('Flase')
+            print('False')
             return jsonify({"response": None})
         
     except Exception as e:
         
-        print("i am here")
+        
         return "There is some error", 500
     finally:
         if cursor:
