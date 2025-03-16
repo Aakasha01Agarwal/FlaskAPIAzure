@@ -30,7 +30,7 @@ def get_db_connection(DATABASE):
     )
     return pyodbc.connect(connection_string)
 
-# API to search patient by name 
+
 @app.route("/search_name", methods=["GET", "POST"])
 def search_patient_by_name():
     if request.method == "GET":
@@ -64,8 +64,18 @@ def search_patient_by_name():
             "Fatigue", "Fever"
         ]
         
-        # Convert each row into a dictionary
-        patients = [dict(zip(columns, row)) for row in rows]
+        # Convert rows to dictionary format
+        patients = []
+        for row in rows:
+            patient_data = dict(zip(columns, row))
+            
+            # Convert DATE and TIME fields to string
+            if isinstance(patient_data["AdmissionDate"], (pyodbc.Date, pyodbc.Timestamp)):
+                patient_data["AdmissionDate"] = str(patient_data["AdmissionDate"])
+            if isinstance(patient_data["AdmissionTime"], pyodbc.Time):
+                patient_data["AdmissionTime"] = str(patient_data["AdmissionTime"])
+
+            patients.append(patient_data)
         
         return jsonify({"response": patients})
 
@@ -77,7 +87,6 @@ def search_patient_by_name():
             cursor.close()
         if conn:
             conn.close()
-
 
 @app.route("/login", methods=["GET", "POST"])
 def login(): 
