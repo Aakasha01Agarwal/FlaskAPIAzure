@@ -31,6 +31,9 @@ def get_db_connection(DATABASE):
     return pyodbc.connect(connection_string)
 
 
+
+
+# API to search patient by name (supports partial and case-insensitive matching)
 @app.route("/search_name", methods=["GET", "POST"])
 def search_patient_by_name():
     if request.method == "GET":
@@ -48,9 +51,9 @@ def search_patient_by_name():
         conn = get_db_connection(DB_PATIENT)
         cursor = conn.cursor()
         
-        # Convert patient_name to lowercase to perform case-insensitive search
-        SQL_QUERY = "SELECT * FROM PatientRecords WHERE LOWER(PatientName) = LOWER(?)"
-        cursor.execute(SQL_QUERY, [patient_name])
+        # Use LIKE with % for partial matching (case-insensitive)
+        SQL_QUERY = "SELECT * FROM PatientRecords WHERE LOWER(PatientName) LIKE LOWER(?)"
+        cursor.execute(SQL_QUERY, [f"%{patient_name}%"])
         rows = cursor.fetchall()
 
         if not rows:
@@ -87,6 +90,8 @@ def search_patient_by_name():
             cursor.close()
         if conn:
             conn.close()
+
+
 
 @app.route("/login", methods=["GET", "POST"])
 def login(): 
