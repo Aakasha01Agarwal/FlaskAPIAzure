@@ -49,7 +49,7 @@ def search_patient_by_name():
         cursor = conn.cursor()
         
         # Convert patient_name to lowercase to perform case-insensitive search
-        SQL_QUERY = "SELECT * FROM patients WHERE LOWER(PatientName) = LOWER(?)"
+        SQL_QUERY = "SELECT * FROM PatientRecords WHERE LOWER(PatientName) = LOWER(?)"
         cursor.execute(SQL_QUERY, [patient_name])
         rows = cursor.fetchall()
 
