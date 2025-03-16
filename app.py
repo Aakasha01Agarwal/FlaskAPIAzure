@@ -7,23 +7,21 @@ from dotenv import load_dotenv
 
 load_dotenv()
 app = Flask(__name__)
+DB_DOCTOR = "doctor-details"
+DB_PATIENT = "TalkMed-db"
 
 
-
-def get_db_connection():
+def get_db_connection(DATABASE):
     server_name = "tcp:talkmed-server.database.windows.net"
-    db_name = "doctor-details"
+    
     uid = os.environ.get("AZURE_UID")
     pwd = os.environ.get("AZURE_PASSWORD")
     
     print(uid, pwd)
 
-    uid_hard = "CloudSAce057eeb"
-    pwdhard = "Gbsssrdjk@#6"
-    print(uid_hard, pwdhard)
-
+ 
     server = "Server="+str(server_name)
-    db = "Database="+str(db_name)
+    db = "Database="+str(DATABASE)
     uid_str = "Uid="+uid
     pwd_str = "PwD="+pwd
     connection_string = (
@@ -31,6 +29,55 @@ def get_db_connection():
         f"{server};{db};{uid_str};{pwd_str};Trusted_connection=no"
     )
     return pyodbc.connect(connection_string)
+
+# API to search patient by name 
+@app.route("/search_name", methods=["GET", "POST"])
+def search_patient_by_name():
+    if request.method == "GET":
+        patient_name = request.args.get('name')
+    else:  # POST request
+        data = request.json
+        patient_name = data.get('name')
+
+    if not patient_name:
+        return jsonify({"error": "Patient name is required"}), 400
+
+    conn = None
+    cursor = None
+    try:
+        conn = get_db_connection(DB_PATIENT)
+        cursor = conn.cursor()
+        
+        # Convert patient_name to lowercase to perform case-insensitive search
+        SQL_QUERY = "SELECT * FROM patients WHERE LOWER(PatientName) = LOWER(?)"
+        cursor.execute(SQL_QUERY, [patient_name])
+        rows = cursor.fetchall()
+
+        if not rows:
+            return jsonify({"response": "No patient found with this name"}), 404
+
+        # Define column names based on database schema
+        columns = [
+            "RecordID", "PatientID", "PatientName", "Age", "Sex", "AdmissionDate",
+            "AdmissionTime", "AdmissionStatus", "BloodPressure", "HeartRate",
+            "RespiratoryRate", "OxygenSaturation", "Temperature", "Headache",
+            "Fatigue", "Fever"
+        ]
+        
+        # Convert each row into a dictionary
+        patients = [dict(zip(columns, row)) for row in rows]
+        
+        return jsonify({"response": patients})
+
+    except Exception as e:
+        print(f"Error: {e}")
+        return jsonify({"error": "Internal Server Error"}), 500
+    finally:
+        if cursor:
+            cursor.close()
+        if conn:
+            conn.close()
+
 
 @app.route("/login", methods=["GET", "POST"])
 def login(): 
@@ -53,7 +100,7 @@ def login():
     cursor = None
     conn = None
     try:
-        conn = get_db_connection()
+        conn = get_db_connection(DB_DOCTOR)
         print('Connection established')
         cursor = conn.cursor()
         SQL_QUERY = "SELECT * FROM doctors WHERE username = ? AND password = ?"
@@ -73,7 +120,6 @@ def login():
             return jsonify({"response": None})
         
     except Exception as e:
-        
         
         return "There is some error", 500
     finally:
