@@ -130,7 +130,7 @@ def filter_patients():
     print(selected_option, 'This is selected option')
 
     if not patient_query_text:
-        return jsonify({"error": "Search query cannot be empty"}), 400
+        return jsonify({'response':[]})
     if selected_option not in PATIENT_SEARCH_ALLOWED_SEARCH:
         return jsonify({"error": "Invalid selected_option"}), 400
     
