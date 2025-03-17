@@ -7,8 +7,8 @@ from dotenv import load_dotenv
 
 load_dotenv()
 app = Flask(__name__)
-DB_DOCTOR = "doctor-details"
-DB_PATIENT = "TalkMed-db"
+DATABASE_NAME = "doctor-detail"
+# DB_PATIENT = "TalkMed-db"
 
 
 def get_db_connection(DATABASE):
@@ -111,7 +111,7 @@ def login():
     cursor = None
     conn = None
     try:
-        conn = get_db_connection(DB_DOCTOR)
+        conn = get_db_connection(DATABASE_NAME)
         print('Connection established')
         cursor = conn.cursor()
         SQL_QUERY = "SELECT * FROM doctor_basic_info WHERE username = ? AND pwd = ?"
