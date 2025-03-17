@@ -34,63 +34,78 @@ def get_db_connection(DATABASE):
 
 
 # API to search patient by name (supports partial and case-insensitive matching)
-@app.route("/search_name", methods=["GET", "POST"])
-def search_patient_by_name():
-    if request.method == "GET":
-        patient_name = request.args.get('name')
-    else:  # POST request
-        data = request.json
-        patient_name = data.get('name')
+# @app.route("/search_name", methods=["GET", "POST"])
+# def search_patient_by_name():
+#     if request.method == "GET":
+#         patient_name = request.args.get('name')
+#     else:  # POST request
+#         data = request.json
+#         patient_name = data.get('name')
 
-    if not patient_name:
-        return jsonify({"error": "Patient name is required"}), 400
+#     if not patient_name:
+#         return jsonify({"error": "Patient name is required"}), 400
 
-    conn = None
-    cursor = None
-    try:
-        conn = get_db_connection(DB_PATIENT)
-        cursor = conn.cursor()
+#     conn = None
+#     cursor = None
+#     try:
+#         conn = get_db_connection(DB_PATIENT)
+#         cursor = conn.cursor()
         
-        # Use LIKE with % for partial matching (case-insensitive)
-        SQL_QUERY = "SELECT * FROM PatientRecords WHERE LOWER(PatientName) LIKE LOWER(?)"
-        cursor.execute(SQL_QUERY, [f"%{patient_name}%"])
-        rows = cursor.fetchall()
+#         # Use LIKE with % for partial matching (case-insensitive)
+#         SQL_QUERY = "SELECT * FROM PatientRecords WHERE LOWER(PatientName) LIKE LOWER(?)"
+#         cursor.execute(SQL_QUERY, [f"%{patient_name}%"])
+#         rows = cursor.fetchall()
 
-        if not rows:
-            return jsonify({"response": "No patient found with this name"}), 404
+#         if not rows:
+#             return jsonify({"response": "No patient found with this name"}), 404
 
-        # Define column names based on database schema
-        columns = [
-            "RecordID", "PatientID", "PatientName", "Age", "Sex", "AdmissionDate",
-            "AdmissionTime", "AdmissionStatus", "BloodPressure", "HeartRate",
-            "RespiratoryRate", "OxygenSaturation", "Temperature", "Headache",
-            "Fatigue", "Fever"
-        ]
+#         # Define column names based on database schema
+#         columns = [
+#             "RecordID", "PatientID", "PatientName", "Age", "Sex", "AdmissionDate",
+#             "AdmissionTime", "AdmissionStatus", "BloodPressure", "HeartRate",
+#             "RespiratoryRate", "OxygenSaturation", "Temperature", "Headache",
+#             "Fatigue", "Fever"
+#         ]
         
-        # Convert rows to dictionary format
-        patients = []
-        for row in rows:
-            patient_data = dict(zip(columns, row))
+#         # Convert rows to dictionary format
+#         patients = []
+#         for row in rows:
+#             patient_data = dict(zip(columns, row))
             
-            # Convert DATE and TIME fields to string
-            if isinstance(patient_data["AdmissionDate"], (pyodbc.Date, pyodbc.Timestamp)):
-                patient_data["AdmissionDate"] = str(patient_data["AdmissionDate"])
-            if isinstance(patient_data["AdmissionTime"], pyodbc.Time):
-                patient_data["AdmissionTime"] = str(patient_data["AdmissionTime"])
+#             # Convert DATE and TIME fields to string
+#             if isinstance(patient_data["AdmissionDate"], (pyodbc.Date, pyodbc.Timestamp)):
+#                 patient_data["AdmissionDate"] = str(patient_data["AdmissionDate"])
+#             if isinstance(patient_data["AdmissionTime"], pyodbc.Time):
+#                 patient_data["AdmissionTime"] = str(patient_data["AdmissionTime"])
 
-            patients.append(patient_data)
+#             patients.append(patient_data)
         
-        return jsonify({"response": patients})
+#         return jsonify({"response": patients})
 
-    except Exception as e:
-        print(f"Error: {e}")
-        return jsonify({"error": "Internal Server Error"}), 500
-    finally:
-        if cursor:
-            cursor.close()
-        if conn:
-            conn.close()
+#     except Exception as e:
+#         print(f"Error: {e}")
+#         return jsonify({"error": "Internal Server Error"}), 500
+#     finally:
+#         if cursor:
+#             cursor.close()
+#         if conn:
+#             conn.close()
 
+
+
+@app.route("/filter_patients", methods = ["GET", 'POST'])
+def filter_patients():
+    if request.method == "GET":
+        patient_query = request.args.get('text')
+        selected_option = request.args.get('selected_option')
+    else:  # POST method
+        data = request.json
+        patient_query = data.get('text')
+        selected_option = data.get('selected_option')
+    print(patient_query, 'this is patient query')
+    print(selected_option, 'This is selected option')
+
+    
 
 
 @app.route("/login", methods=["GET", "POST"])
