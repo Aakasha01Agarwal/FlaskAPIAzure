@@ -20,6 +20,9 @@ ELASTIC_SEARCH_MAPPING_PATIENT_SEARCH = {
         }
     }
 }
+PATIENT_SEARCH_ALLOWED_SEARCH =  set(["patient_name", "patient_uid"])
+
+
 
 
 def get_db_connection(DATABASE):
@@ -114,17 +117,23 @@ def filter_patients():
     selected_option:  patient_name or patient_uid 
      
     '''
-    patient_query_text = ''
-    selected_option = ''
+
     if request.method == "GET":
-        patient_query_text = request.args.get('text')
-        selected_option = request.args.get('selected_option')
+        patient_query_text = request.args.get("text", "").strip()
+        selected_option = request.args.get("selected_option", "").strip()
     else:  # POST method
-        data = request.json
-        patient_query_text = data.get('text')
-        selected_option = data.get('selected_option')
+        data = request.get_json(silent=True) or {}
+        patient_query_text = (data.get("text") or "").strip()
+        selected_option = (data.get("selected_option") or "").strip()
+
     print(patient_query_text, 'this is patient query')
     print(selected_option, 'This is selected option')
+
+    if not patient_query_text:
+        return jsonify({"error": "Search query cannot be empty"}), 400
+    if selected_option not in PATIENT_SEARCH_ALLOWED_SEARCH:
+        return jsonify({"error": "Invalid selected_option"}), 400
+    
     client = Elasticsearch(ELASTIC_SEARCH_ENDPOINT,
                            api_key=ELASTIC_SEARCH_API
                             )
@@ -137,17 +146,20 @@ def filter_patients():
              {
                  selected_option:
                  {
-                     "value" : patient_query_text, 
+                     "value" : f"*{patient_query_text}*", 
                      "case_insensitive":True
                  }
              }
          }
          }
     resp = client.search(index=ELASTIC_SEARCH_INDEX_NAME_PATIENT_SEARCH, body=query)
-    print("Got {} hits:".format(resp["hits"]["total"]["value"]))
+    hits = resp.get("hits", {}).get("hits", [])
 
-    result_hits = [hit["_source"] for hit in resp["hits"]["hits"]]
+    # Extract Results
+    result_hits = [hit["_source"] for hit in hits]
+   
     print(result_hits)
+    
     return jsonify({'response':result_hits})
 
     # return jsonify(hit["_source"])
