@@ -4,7 +4,10 @@ from flask import jsonify, Flask, render_template, request, redirect, url_for, s
 import json
 from dotenv import load_dotenv
 from elasticsearch import Elasticsearch, helpers
-
+import re
+from langchain_core.prompts import PromptTemplate
+from langchain_core.output_parsers import StrOutputParser
+from langchain_deepseek import ChatDeepSeek
 
 load_dotenv()
 app = Flask(__name__)
@@ -23,6 +26,7 @@ ELASTIC_SEARCH_MAPPING_PATIENT_SEARCH = {
 }
 PATIENT_SEARCH_ALLOWED_SEARCH =  set(["patient_name", "patient_uid"])
 
+DEEPSEEK_API_KEY = os.environ.get("DEEPSEEK_API_KEY")
 
 
 
@@ -254,10 +258,131 @@ def login():
             conn.close()
 
 
-     
+def create_prompt(patient_status="OPD"):
+    examples = '''
+    Example 1 (OPD Visit):
+    Conversation:
+    Good morning. How are you feeling today? I've had fever of 101°F since yesterday and feel weak. I also have mild headache. Have you had similar symptoms earlier? Yes, I have asthma history. Let's see your vitals. BP 130/85 mmHg, heart rate 90 bpm, oxygen saturation at 97%.
     
+    Extracted JSON:
+    {{
+        "history_of_presenting_illness": "Fever since last night, mild headache, weakness.",
+        "comorbidities": "Asthma",
+        "temperature": 101.0,
+        "bp": "130/85 mmHg",
+        "pulse": 90,
+        "spo2": 97.0
+    }}
 
+    Example 2 (Admitted Patient):
+    Conversation: 
+    Hi, how are you today? I have trouble breathing for two days now. No fever or chills though. I did have surgery last year for a lung issue. Okay, your BP is 118/76 mmHg, heart rate is 82 bpm, respiratory rate 20 breaths/minute, oxygen saturation is 96% on room air.
 
+    Extracted JSON:
+    {{
+        "history_of_presenting_illness": "Trouble breathing for two days, no fever or chills.",
+        "operative_history": "Lung surgery last year",
+        "bp": "118/76 mmHg",
+        "pulse": 82,
+        "rr": 20,
+        "spo2": 96.0
+    }}
+    '''
+
+    schema_opd = """
+    {{
+        "history_of_presenting_illness": "",
+        "treatment_history": "",
+        "addiction_history": "",
+        "family_history": "",
+        "history_of_similar_complaints": "",
+        "comorbidities": "",
+        "operative_history": "",
+        "temperature": "",
+        "pulse": "",
+        "bp": "",
+        "rr": "",
+        "spo2": "",
+        "other_notes": ""
+    }}
+    """
+
+    schema_admitted = """
+    {{
+        "temperature": "",
+        "pulse": "",
+        "bp": "",
+        "rr": "",
+        "spo2": "",
+        "other_notes": ""
+    }}
+    """
+
+    schema = schema_opd if patient_status == "OPD" else schema_admitted
+
+    prompt_template = PromptTemplate(
+        input_variables=["query"],
+        template=f"""
+        You're an AI assistant that extracts structured medical data from real-time conversational text between doctors and patients. The audio is transcribed directly to text without explicit speaker identification tags.
+
+        Schema:
+        {schema}
+
+        **Extraction rules:**
+        1. Only include fields if you find explicit information in the conversation.
+        2. If information for a specific column isn't present, **omit that field** completely.
+        3. Convert temperature to Fahrenheit if mentioned in Celsius.
+        4. Place any extra clinically relevant information that doesn’t fit any column into the `other_notes` field as free text.
+        5. ONLY RETURN RAW JSON WITHOUT MARKDOWN FORMATTING. Do NOT wrap the output in triple backticks or specify "json".
+
+        Examples:
+        {examples}
+
+        Extract relevant structured data from the following real-time conversation text:
+        {{query}}
+        """
+    )
+    
+    return prompt_template
+
+def process_deepseek(prompt_template, transcription):
+    
+    # initialize deepseek mode
+    llm = ChatDeepSeek(
+        model="deepseek-chat",
+        temperature=0.1,
+        max_tokens=None,
+        timeout=None,
+        max_retries=2,
+        api_key=DEEPSEEK_API_KEY,
+        streaming = True
+        # other params...
+    )
+    print("Deepseek ChatDeepSeek initialized.")
+    
+    # initialize outputparser -> chain -> query_input
+    output_parser = StrOutputParser()
+    chain =  prompt_template | llm | output_parser
+    
+    # output from deepseek
+    out = chain.invoke({"query": transcription})
+    print(f"Output from deepseek: {out}")
+
+    return out
+  
+def clean_json_output(llm_output):
+    # Remove markdown JSON code blocks
+    json_cleaned = re.sub(r'```(?:json)?', '', llm_output, flags=re.I).strip()
+    json_cleaned = json_cleaned.strip('` \n')
+    
+    # Parse JSON safely
+    return json.loads(json_cleaned)  
+
+def process_transcription(transcription, patient_status="OPD"):
+    prompt_template = create_prompt(patient_status)
+    llm_output = process_deepseek(prompt_template, transcription)
+    cleaned_output = clean_json_output(llm_output)
+    return cleaned_output
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=8000)
