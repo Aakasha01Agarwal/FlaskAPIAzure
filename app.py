@@ -12,7 +12,7 @@ DB_PATIENT = "TalkMed-db"
 
 
 def get_db_connection(DATABASE):
-    server_name = "tcp:talkmed-server.database.windows.net"
+    server_name = "tcp:talkmedserver.database.windows.net"
     
     uid = os.environ.get("AZURE_UID")
     pwd = os.environ.get("AZURE_PASSWORD")
@@ -107,9 +107,6 @@ def login():
     if not username or not password:
         return jsonify({"error": "Missing username or password"}), 400
 
-
-    # username = request.args.get('username')
-    # password = request.args.get('password')
     print(username, password, '=========================')
     cursor = None
     conn = None
@@ -117,14 +114,13 @@ def login():
         conn = get_db_connection(DB_DOCTOR)
         print('Connection established')
         cursor = conn.cursor()
-        SQL_QUERY = "SELECT * FROM doctors WHERE username = ? AND password = ?"
+        SQL_QUERY = "SELECT * FROM doctor_basic_info WHERE username = ? AND pwd = ?"
         cursor.execute(SQL_QUERY, [username, password ])
-        # columns = [column[0] for column in cursor.description]
+        columns = [column[0] for column in cursor.description]
         rows = cursor.fetchall()
         
         if len(rows)>0:
             print("true")
-            columns = ["id", "username", "password", "email_id", "mobile", "first_name", "middle_name", "last_name", "role"]
             # Convert the row into a dictionary
             doctor_data = dict(zip(columns, rows[0]))
 
@@ -135,7 +131,7 @@ def login():
         
     except Exception as e:
         
-        return "There is some error", 500
+        return "There is some error", e
     finally:
         if cursor:
             cursor.close()
