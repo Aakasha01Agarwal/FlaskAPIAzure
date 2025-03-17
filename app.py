@@ -332,7 +332,7 @@ def create_prompt(patient_status="OPD"):
         1. Only include fields if you find explicit information in the conversation.
         2. If information for a specific column isn't present, **omit that field** completely.
         3. Convert temperature to Fahrenheit if mentioned in Celsius.
-        4. Place any extra clinically relevant information that doesn’t fit any column into the `other_notes` field as free text.
+        4. Place any extra clinically relevant information that doesn't fit any column into the `other_notes` field as free text.
         5. ONLY RETURN RAW JSON WITHOUT MARKDOWN FORMATTING. Do NOT wrap the output in triple backticks or specify "json".
 
         Examples:
@@ -378,11 +378,134 @@ def clean_json_output(llm_output):
     # Parse JSON safely
     return json.loads(json_cleaned)  
 
-def process_transcription(transcription, patient_status="OPD"):
+def get_transcription_json(transcription, patient_status="OPD"):
     prompt_template = create_prompt(patient_status)
     llm_output = process_deepseek(prompt_template, transcription)
     cleaned_output = clean_json_output(llm_output)
     return cleaned_output
+
+def insert_transript_data(transcription_json, selected_option, created_at):
+
+    if selected_option == "OPD":
+            transcription_json['visit_timestamp'] = created_at
+            insert_query = """
+            INSERT INTO opd_records (
+                id, patient_id, doctor_id, visit_timestamp, history_of_presenting_illness
+                , treatment_history, addiction_history, family_history, history_of_similar_complaints,
+                comorbidities, operative_history, temperature, pulse, bp, rr, spo2, other_notes
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """
+            values = (
+            transcription_json.get("id", ""),
+            transcription_json.get("patient_id", ""),
+            transcription_json.get("doctor_id", ""),
+            transcription_json.get("visit_timestamp", ""),
+            transcription_json.get("history_of_presenting_illness", ""),
+            transcription_json.get("treatment_history", ""),
+            transcription_json.get("addiction_history", ""),
+            transcription_json.get("family_history", ""),
+            transcription_json.get("history_of_similar_complaints", ""),
+            transcription_json.get("comorbidities", ""),
+            transcription_json.get("operative_history", ""),
+            transcription_json.get("temperature", ""),
+            transcription_json.get("pulse", ""),
+            transcription_json.get("bp", ""),
+            transcription_json.get("rr", ""),
+            transcription_json.get("spo2", ""),
+            transcription_json.get("other_notes", "")
+            )
+
+        else:
+            transcription_json['admission_timestamp'] = created_at
+            insert_query = """
+            INSERT INTO admitted_patient_records (
+                id, patient_id, doctor_id, admission_timestamp, temperature, pulse, bp, rr, spo2, other_notes
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """
+            values = (
+            transcription_json.get("id", ""),
+            transcription_json.get("patient_id", ""),
+            transcription_json.get("doctor_id", ""),
+            transcription_json.get("admission_timestamp", ""),
+            transcription_json.get("temperature", ""),    
+            transcription_json.get("pulse", ""),
+            transcription_json.get("bp", ""),
+            transcription_json.get("rr", ""),
+            transcription_json.get("spo2", ""),
+            transcription_json.get("other_notes", "")
+            )
+        
+        cursor.execute(insert_query, values)
+        conn.commit()
+
+@app.route("/process_transcription", methods = ["GET", 'POST']) 
+def process_transcription():
+    # Input validation
+    if request.method == "GET":
+        patient_transcription = request.args.get("text", "").strip()
+        selected_option = request.args.get("selected_option", "").strip()
+        patient_id = request.args.get("patient_id", "").strip()
+        doctor_id = request.args.get("doctor_id", "").strip()
+        created_at = request.args.get("created_at", "").strip()
+    else:  # POST method
+        data = request.get_json(silent=True) or {}
+        patient_transcription = (data.get("text") or "").strip()
+        selected_option = (data.get("selected_option") or "").strip()
+        patient_id = (data.get("patient_id") or "").strip()
+        doctor_id = (data.get("doctor_id") or "").strip()
+        created_at = (data.get("created_at") or "").strip()
+
+    # Validate required fields
+    if not patient_transcription:
+        return jsonify({"error": "Patient transcription text is required"}), 400
+    if not selected_option:
+        return jsonify({"error": "Selected option is required"}), 400
+    if not patient_id:
+        return jsonify({"error": "Patient ID is required"}), 400
+    if not doctor_id:
+        return jsonify({"error": "Doctor ID is required"}), 400
+    if not created_at:
+        return jsonify({"error": "Created timestamp is required"}), 400
+    
+    # Validate selected_option
+    if selected_option not in ["OPD", "admitted"]:
+        return jsonify({"error": "Invalid selected_option. Must be either 'OPD' or 'admitted'"}), 400
+
+    conn = None
+    cursor = None
+    try:
+        conn = get_db_connection(DATABASE_NAME)
+        print('Connection established')
+        cursor = conn.cursor()
+        
+        transcription_json = get_transcription_json(patient_transcription, selected_option)
+        print(f"Transcription JSON: {transcription_json}")
+
+        transcription_json['patient_id'] = patient_id
+        transcription_json['doctor_id'] = doctor_id
+
+        insert_transript_data(transcription_json, selected_option, created_at)
+        print("Patient record inserted successfully.")
+        
+        return jsonify({
+            "status": "success",
+            "message": "Patient record processed and inserted successfully",
+            "data": transcription_json
+        }), 200
+        
+    except Exception as e:
+        print(f"Error processing transcription: {str(e)}")
+        return jsonify({
+            "status": "error",
+            "message": "Failed to process transcription",
+            "error": str(e)
+        }), 500
+    finally:
+        if cursor:
+            cursor.close()
+        if conn:
+            conn.close()
+
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=8000)
