@@ -9,7 +9,8 @@ from elasticsearch import Elasticsearch, helpers
 load_dotenv()
 app = Flask(__name__)
 DATABASE_NAME = "doctor-detail"
-# DB_PATIENT = "TalkMed-db"
+DOCTOR_BASIC_INFO_TABLE = "doctor_basic_info"
+PATIENT_BASIC_INFO_TABLE = "patient_basic_info"
 ELASTIC_SEARCH_API = os.environ.get("ELASTIC_SEARCH_API")
 ELASTIC_SEARCH_ENDPOINT = os.environ.get("ELASTIC_SEARCH_ENDPOIT")
 ELASTIC_SEARCH_INDEX_NAME_PATIENT_SEARCH = "patient_search"
@@ -164,7 +165,45 @@ def filter_patients():
 
     # return jsonify(hit["_source"])
 
+@app.route("/get_patient_by_uid", methods = ["GET", 'POST']) 
+def get_patient_by_uid():
+    if request.method == "GET":
+        patient_uid = request.args.get("patient_uid", "").strip()
+        
+    else:  # POST method
+        data = request.get_json(silent=True) or {}
+        patient_uid = (data.get("patient_uid") or "").strip()
     
+    
+
+    try:
+        conn = get_db_connection(DATABASE_NAME)
+        print('Connection established')
+        cursor = conn.cursor()
+        
+        SQL_QUERY = f"Select * from {PATIENT_BASIC_INFO_TABLE} where patient_uid = ?"
+        cursor.execute(SQL_QUERY, [patient_uid ])
+        columns = [column[0] for column in cursor.description]
+        rows = cursor.fetchall()
+        
+        if len(rows)>0:
+            print("true")
+            # Convert the row into a dictionary
+            patient_data = dict(zip(columns, rows[0]))
+
+            return  jsonify({"response": patient_data})
+        else:
+            print('False')
+            return jsonify({"response": None})
+        
+    except Exception as e:
+        
+        return "There is some error", e
+    finally:
+        if cursor:
+            cursor.close()
+        if conn:
+            conn.close()
 
     
 
@@ -190,7 +229,7 @@ def login():
         conn = get_db_connection(DATABASE_NAME)
         print('Connection established')
         cursor = conn.cursor()
-        SQL_QUERY = "SELECT * FROM doctor_basic_info WHERE username = ? AND pwd = ?"
+        SQL_QUERY = f"SELECT * FROM {DOCTOR_BASIC_INFO_TABLE} WHERE username = ? AND pwd = ?"
         cursor.execute(SQL_QUERY, [username, password ])
         columns = [column[0] for column in cursor.description]
         rows = cursor.fetchall()
