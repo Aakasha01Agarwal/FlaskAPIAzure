@@ -3,12 +3,23 @@ import os
 from flask import jsonify, Flask, render_template, request, redirect, url_for, session, flash
 import json
 from dotenv import load_dotenv
+from elasticsearch import Elasticsearch, helpers
 
 
 load_dotenv()
 app = Flask(__name__)
 DATABASE_NAME = "doctor-detail"
 # DB_PATIENT = "TalkMed-db"
+ELASTIC_SEARCH_API = os.environ.get("ELASTIC_SEARCH_API")
+ELASTIC_SEARCH_ENDPOINT = os.environ.get("ELASTIC_SEARCH_ENDPOIT")
+ELASTIC_SEARCH_INDEX_NAME_PATIENT_SEARCH = "patient_search"
+ELASTIC_SEARCH_MAPPING_PATIENT_SEARCH = {
+    "properties": {
+        "text": {
+            "type": "text"
+        }
+    }
+}
 
 
 def get_db_connection(DATABASE):
@@ -95,15 +106,53 @@ def get_db_connection(DATABASE):
 
 @app.route("/filter_patients", methods = ["GET", 'POST'])
 def filter_patients():
+
+    '''
+    
+    Takes two params based on the frontend, 
+    Text: Input Text query based on what we have to search
+    selected_option:  patient_name or patient_uid 
+     
+    '''
+    patient_query_text = ''
+    selected_option = ''
     if request.method == "GET":
-        patient_query = request.args.get('text')
+        patient_query_text = request.args.get('text')
         selected_option = request.args.get('selected_option')
     else:  # POST method
         data = request.json
-        patient_query = data.get('text')
+        patient_query_text = data.get('text')
         selected_option = data.get('selected_option')
-    print(patient_query, 'this is patient query')
+    print(patient_query_text, 'this is patient query')
     print(selected_option, 'This is selected option')
+    client = Elasticsearch(ELASTIC_SEARCH_ENDPOINT,
+                           api_key=ELASTIC_SEARCH_API
+                            )
+
+    # mapping_response = client.indices.put_mapping(index=ELASTIC_SEARCH_INDEX_NAME_PATIENT_SEARCH, body=ELASTIC_SEARCH_MAPPING_PATIENT_SEARCH)
+    patient_query_text = "*"+patient_query_text+"*"
+    query = {"query":
+         {
+             "wildcard":
+             {
+                 selected_option:
+                 {
+                     "value" : patient_query_text, 
+                     "case_insensitive":True
+                 }
+             }
+         }
+         }
+    resp = client.search(index=ELASTIC_SEARCH_INDEX_NAME_PATIENT_SEARCH, body=query)
+    print("Got {} hits:".format(resp["hits"]["total"]["value"]))
+
+    result_hits = [hit["_source"] for hit in resp["hits"]["hits"]]
+    print(result_hits)
+    return jsonify({'response':result_hits})
+
+    # return jsonify(hit["_source"])
+
+    
 
     
 
