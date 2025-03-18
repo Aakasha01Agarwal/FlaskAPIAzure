@@ -3,3 +3,5 @@ pyodbc
 dotenv
 flask_cors
 elasticsearch
+langchain-deepseek
+langchain-community
