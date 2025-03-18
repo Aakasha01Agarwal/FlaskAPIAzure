@@ -8,12 +8,15 @@ import re
 from langchain_core.prompts import PromptTemplate
 from langchain_core.output_parsers import StrOutputParser
 from langchain_deepseek import ChatDeepSeek
+import datetime
 
 load_dotenv()
 app = Flask(__name__)
 DATABASE_NAME = "doctor-detail"
 DOCTOR_BASIC_INFO_TABLE = "doctor_basic_info"
 PATIENT_BASIC_INFO_TABLE = "patient_basic_info"
+OPD_RECORDS_TABLE = "opd_records"
+ADMITTED_PATIENT_RECORDS_TABLE = "admitted_patient_records"
 ELASTIC_SEARCH_API = os.environ.get("ELASTIC_SEARCH_API")
 ELASTIC_SEARCH_ENDPOINT = os.environ.get("ELASTIC_SEARCH_ENDPOIT")
 ELASTIC_SEARCH_INDEX_NAME_PATIENT_SEARCH = "patient_search"
@@ -388,8 +391,8 @@ def insert_transript_data(transcription_json, selected_option, created_at):
 
     if selected_option == "OPD":
             transcription_json['visit_timestamp'] = created_at
-            insert_query = """
-            INSERT INTO opd_records (
+            insert_query = f"""
+            INSERT INTO {OPD_RECORDS_TABLE} (
                 patient_id, doctor_id, visit_timestamp, history_of_presenting_illness
                 , treatment_history, addiction_history, family_history, history_of_similar_complaints,
                 comorbidities, operative_history, temperature, pulse, bp, rr, spo2, other_notes
@@ -417,8 +420,8 @@ def insert_transript_data(transcription_json, selected_option, created_at):
 
         else:
             transcription_json['admission_timestamp'] = created_at
-            insert_query = """
-            INSERT INTO admitted_patient_records (
+            insert_query = f"""
+            INSERT INTO {ADMITTED_PATIENT_RECORDS_TABLE} (
                 patient_id, doctor_id, admission_timestamp, temperature, pulse, bp, rr, spo2, other_notes
             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
             """
@@ -506,6 +509,86 @@ def process_transcription():
         if conn:
             conn.close()
 
+@app.route("/get_latest_patient_details", methods = ["GET", 'POST']) 
+def get_latest_patient_details():
+    # Input validation
+    if request.method == "GET":
+        patient_id = request.args.get("patient_id", "").strip()
+        selected_option = request.args.get("selected_option", "").strip()
+    else:  # POST method
+        data = request.get_json(silent=True) or {}
+        patient_id = (data.get("patient_id") or "").strip()
+        selected_option = (data.get("selected_option") or "").strip()
+
+    # Validate required fields
+    if not patient_id:
+        return jsonify({"error": "Patient ID is required"}), 400
+    if not selected_option:
+        return jsonify({"error": "Selected option is required"}), 400
+    
+    # Validate selected_option
+    if selected_option not in ["OPD", "admitted"]:
+        return jsonify({"error": "Invalid selected_option. Must be either 'OPD' or 'admitted'"}), 400
+
+    # Set table and timestamp based on selected option
+    if selected_option == "OPD":
+        table_name = OPD_RECORDS_TABLE
+        timestamp_column = "visit_timestamp"
+    else:
+        table_name = ADMITTED_PATIENT_RECORDS_TABLE
+        timestamp_column = "admission_timestamp"
+
+    conn = None
+    cursor = None
+    try:
+        conn = get_db_connection(DATABASE_NAME)
+        print('Connection established')
+        cursor = conn.cursor()
+        
+        # Using TOP 1 instead of LIMIT for SQL Server
+        SQL_QUERY = f"""
+            SELECT TOP 1 * 
+            FROM {table_name} 
+            WHERE patient_id = ? 
+            ORDER BY {timestamp_column} DESC
+        """
+        cursor.execute(SQL_QUERY, [patient_id])
+        columns = [column[0] for column in cursor.description]
+        rows = cursor.fetchall()
+        
+        if len(rows) > 0:
+            # Convert the row into a dictionary
+            patient_data = dict(zip(columns, rows[0]))
+            
+            # Convert any datetime objects to string for JSON serialization
+            for key, value in patient_data.items():
+                if isinstance(value, (datetime.date, datetime.datetime)):
+                    patient_data[key] = value.isoformat()
+
+            return jsonify({
+                "status": "success",
+                "message": "Latest patient record retrieved successfully",
+                "data": patient_data
+            }), 200
+        else:
+            return jsonify({
+                "status": "success",
+                "message": "No records found for this patient",
+                "data": None
+            }), 404
+        
+    except Exception as e:
+        print(f"Error retrieving patient details: {str(e)}")
+        return jsonify({
+            "status": "error",
+            "message": "Failed to retrieve patient details",
+            "error": str(e)
+        }), 500
+    finally:
+        if cursor:
+            cursor.close()
+        if conn:
+            conn.close()
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=8000)
