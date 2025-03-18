@@ -492,21 +492,27 @@ def process_transcription():
         transcription_json['patient_id'] = patient_id
         transcription_json['doctor_id'] = doctor_id
 
-        success, error = insert_transript_data(transcription_json, selected_option, created_at, cursor, conn)
-        if success:
-            print("Patient record inserted successfully.")
-            return jsonify({
+        return jsonify({
                 "status": "success",
                 "message": "Patient record processed and inserted successfully",
                 "data": transcription_json
             }), 200
-        else:
-            print(f"Error processing transcription: {error}")
-            return jsonify({
-                "status": "error",
-                "message": "Failed to process transcription",
-                "error": error
-            }), 500
+
+        # success, error = insert_transript_data(transcription_json, selected_option, created_at, cursor, conn)
+        # if success:
+        #     print("Patient record inserted successfully.")
+        #     return jsonify({
+        #         "status": "success",
+        #         "message": "Patient record processed and inserted successfully",
+        #         "data": transcription_json
+        #     }), 200
+        # else:
+        #     print(f"Error processing transcription: {error}")
+        #     return jsonify({
+        #         "status": "error",
+        #         "message": "Failed to process transcription",
+        #         "error": error
+        #     }), 500
         
     except Exception as e:
         print(f"Error processing transcription: {str(e)}")
