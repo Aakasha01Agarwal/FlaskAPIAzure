@@ -4,13 +4,19 @@ from flask import jsonify, Flask, render_template, request, redirect, url_for, s
 import json
 from dotenv import load_dotenv
 from elasticsearch import Elasticsearch, helpers
-
+import re
+from langchain_core.prompts import PromptTemplate
+from langchain_core.output_parsers import StrOutputParser
+from langchain_deepseek import ChatDeepSeek
+import datetime
 
 load_dotenv()
 app = Flask(__name__)
 DATABASE_NAME = "doctor-detail"
 DOCTOR_BASIC_INFO_TABLE = "doctor_basic_info"
 PATIENT_BASIC_INFO_TABLE = "patient_basic_info"
+OPD_RECORDS_TABLE = "opd_records"
+ADMITTED_PATIENT_RECORDS_TABLE = "admitted_patient_records"
 ELASTIC_SEARCH_API = os.environ.get("ELASTIC_SEARCH_API")
 ELASTIC_SEARCH_ENDPOINT = os.environ.get("ELASTIC_SEARCH_ENDPOIT")
 ELASTIC_SEARCH_INDEX_NAME_PATIENT_SEARCH = "patient_search"
@@ -23,6 +29,7 @@ ELASTIC_SEARCH_MAPPING_PATIENT_SEARCH = {
 }
 PATIENT_SEARCH_ALLOWED_SEARCH =  set(["patient_name", "patient_uid"])
 
+DEEPSEEK_API_KEY = os.environ.get("DEEPSEEK_API_KEY")
 
 
 
@@ -254,10 +261,334 @@ def login():
             conn.close()
 
 
-     
+def create_prompt(patient_status="OPD"):
+    examples = '''
+    Example 1 (OPD Visit):
+    Conversation:
+    Good morning. How are you feeling today? I've had fever of 101°F since yesterday and feel weak. I also have mild headache. Have you had similar symptoms earlier? Yes, I have asthma history. Let's see your vitals. BP 130/85 mmHg, heart rate 90 bpm, oxygen saturation at 97%.
     
+    Extracted JSON:
+    {{
+        "history_of_presenting_illness": "Fever since last night, mild headache, weakness.",
+        "comorbidities": "Asthma",
+        "temperature": 101.0,
+        "bp": "130/85 mmHg",
+        "pulse": 90,
+        "spo2": 97.0
+    }}
 
+    Example 2 (Admitted Patient):
+    Conversation: 
+    Hi, how are you today? I have trouble breathing for two days now. No fever or chills though. I did have surgery last year for a lung issue. Okay, your BP is 118/76 mmHg, heart rate is 82 bpm, respiratory rate 20 breaths/minute, oxygen saturation is 96% on room air.
 
+    Extracted JSON:
+    {{
+        "history_of_presenting_illness": "Trouble breathing for two days, no fever or chills.",
+        "operative_history": "Lung surgery last year",
+        "bp": "118/76 mmHg",
+        "pulse": 82,
+        "rr": 20,
+        "spo2": 96.0
+    }}
+    '''
+
+    schema_opd = """
+    {{
+        "history_of_presenting_illness": "",
+        "treatment_history": "",
+        "addiction_history": "",
+        "family_history": "",
+        "history_of_similar_complaints": "",
+        "comorbidities": "",
+        "operative_history": "",
+        "temperature": "",
+        "pulse": "",
+        "bp": "",
+        "rr": "",
+        "spo2": "",
+        "other_notes": ""
+    }}
+    """
+
+    schema_admitted = """
+    {{
+        "temperature": "",
+        "pulse": "",
+        "bp": "",
+        "rr": "",
+        "spo2": "",
+        "other_notes": ""
+    }}
+    """
+
+    schema = schema_opd if patient_status == "OPD" else schema_admitted
+
+    prompt_template = PromptTemplate(
+        input_variables=["query"],
+        template=f"""
+        You're an AI assistant that extracts structured medical data from real-time conversational text between doctors and patients. The audio is transcribed directly to text without explicit speaker identification tags.
+
+        Schema:
+        {schema}
+
+        **Extraction rules:**
+        1. Only include fields if you find explicit information in the conversation.
+        2. If information for a specific column isn't present, **omit that field** completely.
+        3. Convert temperature to Fahrenheit if mentioned in Celsius.
+        4. Place any extra clinically relevant information that doesn't fit any column into the `other_notes` field as free text.
+        5. ONLY RETURN RAW JSON WITHOUT MARKDOWN FORMATTING. Do NOT wrap the output in triple backticks or specify "json".
+
+        Examples:
+        {examples}
+
+        Extract relevant structured data from the following real-time conversation text:
+        {{query}}
+        """
+    )
+    
+    return prompt_template
+
+def process_deepseek(prompt_template, transcription):
+    
+    # initialize deepseek mode
+    llm = ChatDeepSeek(
+        model="deepseek-chat",
+        temperature=0.1,
+        max_tokens=None,
+        timeout=None,
+        max_retries=2,
+        api_key=DEEPSEEK_API_KEY,
+        streaming = True
+        # other params...
+    )
+    print("Deepseek ChatDeepSeek initialized.")
+    
+    # initialize outputparser -> chain -> query_input
+    output_parser = StrOutputParser()
+    chain =  prompt_template | llm | output_parser
+    
+    # output from deepseek
+    out = chain.invoke({"query": transcription})
+    print(f"Output from deepseek: {out}")
+
+    return out
+  
+def clean_json_output(llm_output):
+    # Remove markdown JSON code blocks
+    json_cleaned = re.sub(r'```(?:json)?', '', llm_output, flags=re.I).strip()
+    json_cleaned = json_cleaned.strip('` \n')
+    
+    # Parse JSON safely
+    return json.loads(json_cleaned)  
+
+def get_transcription_json(transcription, patient_status="OPD"):
+    prompt_template = create_prompt(patient_status)
+    llm_output = process_deepseek(prompt_template, transcription)
+    cleaned_output = clean_json_output(llm_output)
+    return cleaned_output
+
+def insert_transript_data(transcription_json, selected_option, created_at):
+
+    if selected_option == "OPD":
+            transcription_json['visit_timestamp'] = created_at
+            insert_query = f"""
+            INSERT INTO {OPD_RECORDS_TABLE} (
+                patient_id, doctor_id, visit_timestamp, history_of_presenting_illness
+                , treatment_history, addiction_history, family_history, history_of_similar_complaints,
+                comorbidities, operative_history, temperature, pulse, bp, rr, spo2, other_notes
+            ) VALUES ( ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """
+            values = (
+            # transcription_json.get("id", ""),
+            transcription_json.get("patient_id", ""),
+            transcription_json.get("doctor_id", ""),
+            transcription_json.get("visit_timestamp", ""),
+            transcription_json.get("history_of_presenting_illness", ""),
+            transcription_json.get("treatment_history", ""),
+            transcription_json.get("addiction_history", ""),
+            transcription_json.get("family_history", ""),
+            transcription_json.get("history_of_similar_complaints", ""),
+            transcription_json.get("comorbidities", ""),
+            transcription_json.get("operative_history", ""),
+            transcription_json.get("temperature", ""),
+            transcription_json.get("pulse", ""),
+            transcription_json.get("bp", ""),
+            transcription_json.get("rr", ""),
+            transcription_json.get("spo2", ""),
+            transcription_json.get("other_notes", "")
+            )
+
+        else:
+            transcription_json['admission_timestamp'] = created_at
+            insert_query = f"""
+            INSERT INTO {ADMITTED_PATIENT_RECORDS_TABLE} (
+                patient_id, doctor_id, admission_timestamp, temperature, pulse, bp, rr, spo2, other_notes
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """
+            values = (
+            # transcription_json.get("id", ""),
+            transcription_json.get("patient_id", ""),
+            transcription_json.get("doctor_id", ""),
+            transcription_json.get("admission_timestamp", ""),
+            transcription_json.get("temperature", ""),    
+            transcription_json.get("pulse", ""),
+            transcription_json.get("bp", ""),
+            transcription_json.get("rr", ""),
+            transcription_json.get("spo2", ""),
+            transcription_json.get("other_notes", "")
+            )
+        
+        cursor.execute(insert_query, values)
+        conn.commit()
+
+@app.route("/process_transcription", methods = ["GET", 'POST']) 
+def process_transcription():
+    # Input validation
+    if request.method == "GET":
+        patient_transcription = request.args.get("text", "").strip()
+        selected_option = request.args.get("selected_option", "").strip()
+        patient_id = request.args.get("patient_id", "").strip()
+        doctor_id = request.args.get("doctor_id", "").strip()
+        created_at = request.args.get("created_at", "").strip()
+    else:  # POST method
+        data = request.get_json(silent=True) or {}
+        patient_transcription = (data.get("text") or "").strip()
+        selected_option = (data.get("selected_option") or "").strip()
+        patient_id = (data.get("patient_id") or "").strip()
+        doctor_id = (data.get("doctor_id") or "").strip()
+        created_at = (data.get("created_at") or "").strip()
+
+    # Validate required fields
+    if not patient_transcription:
+        return jsonify({"error": "Patient transcription text is required"}), 400
+    if not selected_option:
+        return jsonify({"error": "Selected option is required"}), 400
+    if not patient_id:
+        return jsonify({"error": "Patient ID is required"}), 400
+    if not doctor_id:
+        return jsonify({"error": "Doctor ID is required"}), 400
+    if not created_at:
+        return jsonify({"error": "Created timestamp is required"}), 400
+    
+    # Validate selected_option
+    if selected_option not in ["OPD", "admitted"]:
+        return jsonify({"error": "Invalid selected_option. Must be either 'OPD' or 'admitted'"}), 400
+
+    conn = None
+    cursor = None
+    try:
+        conn = get_db_connection(DATABASE_NAME)
+        print('Connection established')
+        cursor = conn.cursor()
+        
+        transcription_json = get_transcription_json(patient_transcription, selected_option)
+        print(f"Transcription JSON: {transcription_json}")
+
+        transcription_json['patient_id'] = patient_id
+        transcription_json['doctor_id'] = doctor_id
+
+        insert_transript_data(transcription_json, selected_option, created_at)
+        print("Patient record inserted successfully.")
+        
+        return jsonify({
+            "status": "success",
+            "message": "Patient record processed and inserted successfully",
+            "data": transcription_json
+        }), 200
+        
+    except Exception as e:
+        print(f"Error processing transcription: {str(e)}")
+        return jsonify({
+            "status": "error",
+            "message": "Failed to process transcription",
+            "error": str(e)
+        }), 500
+    finally:
+        if cursor:
+            cursor.close()
+        if conn:
+            conn.close()
+
+@app.route("/get_latest_patient_details", methods = ["GET", 'POST']) 
+def get_latest_patient_details():
+    # Input validation
+    if request.method == "GET":
+        patient_id = request.args.get("patient_id", "").strip()
+        selected_option = request.args.get("selected_option", "").strip()
+    else:  # POST method
+        data = request.get_json(silent=True) or {}
+        patient_id = (data.get("patient_id") or "").strip()
+        selected_option = (data.get("selected_option") or "").strip()
+
+    # Validate required fields
+    if not patient_id:
+        return jsonify({"error": "Patient ID is required"}), 400
+    if not selected_option:
+        return jsonify({"error": "Selected option is required"}), 400
+    
+    # Validate selected_option
+    if selected_option not in ["OPD", "admitted"]:
+        return jsonify({"error": "Invalid selected_option. Must be either 'OPD' or 'admitted'"}), 400
+
+    # Set table and timestamp based on selected option
+    if selected_option == "OPD":
+        table_name = OPD_RECORDS_TABLE
+        timestamp_column = "visit_timestamp"
+    else:
+        table_name = ADMITTED_PATIENT_RECORDS_TABLE
+        timestamp_column = "admission_timestamp"
+
+    conn = None
+    cursor = None
+    try:
+        conn = get_db_connection(DATABASE_NAME)
+        print('Connection established')
+        cursor = conn.cursor()
+        
+        # Using TOP 1 instead of LIMIT for SQL Server
+        SQL_QUERY = f"""
+            SELECT TOP 1 * 
+            FROM {table_name} 
+            WHERE patient_id = ? 
+            ORDER BY {timestamp_column} DESC
+        """
+        cursor.execute(SQL_QUERY, [patient_id])
+        columns = [column[0] for column in cursor.description]
+        rows = cursor.fetchall()
+        
+        if len(rows) > 0:
+            # Convert the row into a dictionary
+            patient_data = dict(zip(columns, rows[0]))
+            
+            # Convert any datetime objects to string for JSON serialization
+            for key, value in patient_data.items():
+                if isinstance(value, (datetime.date, datetime.datetime)):
+                    patient_data[key] = value.isoformat()
+
+            return jsonify({
+                "status": "success",
+                "message": "Latest patient record retrieved successfully",
+                "data": patient_data
+            }), 200
+        else:
+            return jsonify({
+                "status": "success",
+                "message": "No records found for this patient",
+                "data": None
+            }), 404
+        
+    except Exception as e:
+        print(f"Error retrieving patient details: {str(e)}")
+        return jsonify({
+            "status": "error",
+            "message": "Failed to retrieve patient details",
+            "error": str(e)
+        }), 500
+    finally:
+        if cursor:
+            cursor.close()
+        if conn:
+            conn.close()
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=8000)
