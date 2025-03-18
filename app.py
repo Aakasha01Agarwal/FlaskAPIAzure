@@ -390,13 +390,13 @@ def insert_transript_data(transcription_json, selected_option, created_at):
             transcription_json['visit_timestamp'] = created_at
             insert_query = """
             INSERT INTO opd_records (
-                id, patient_id, doctor_id, visit_timestamp, history_of_presenting_illness
+                patient_id, doctor_id, visit_timestamp, history_of_presenting_illness
                 , treatment_history, addiction_history, family_history, history_of_similar_complaints,
                 comorbidities, operative_history, temperature, pulse, bp, rr, spo2, other_notes
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ) VALUES ( ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """
             values = (
-            transcription_json.get("id", ""),
+            # transcription_json.get("id", ""),
             transcription_json.get("patient_id", ""),
             transcription_json.get("doctor_id", ""),
             transcription_json.get("visit_timestamp", ""),
@@ -419,11 +419,11 @@ def insert_transript_data(transcription_json, selected_option, created_at):
             transcription_json['admission_timestamp'] = created_at
             insert_query = """
             INSERT INTO admitted_patient_records (
-                id, patient_id, doctor_id, admission_timestamp, temperature, pulse, bp, rr, spo2, other_notes
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                patient_id, doctor_id, admission_timestamp, temperature, pulse, bp, rr, spo2, other_notes
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
             """
             values = (
-            transcription_json.get("id", ""),
+            # transcription_json.get("id", ""),
             transcription_json.get("patient_id", ""),
             transcription_json.get("doctor_id", ""),
             transcription_json.get("admission_timestamp", ""),
