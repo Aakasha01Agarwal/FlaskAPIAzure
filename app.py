@@ -387,9 +387,9 @@ def get_transcription_json(transcription, patient_status="OPD"):
     cleaned_output = clean_json_output(llm_output)
     return cleaned_output
 
-def insert_transript_data(transcription_json, selected_option, created_at):
-
-    if selected_option == "OPD":
+def insert_transript_data(transcription_json, selected_option, created_at, cursor, conn):
+    try:
+        if selected_option == "OPD":
             transcription_json['visit_timestamp'] = created_at
             insert_query = f"""
             INSERT INTO {OPD_RECORDS_TABLE} (
@@ -399,47 +399,52 @@ def insert_transript_data(transcription_json, selected_option, created_at):
             ) VALUES ( ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """
             values = (
-            # transcription_json.get("id", ""),
-            transcription_json.get("patient_id", ""),
-            transcription_json.get("doctor_id", ""),
-            transcription_json.get("visit_timestamp", ""),
-            transcription_json.get("history_of_presenting_illness", ""),
-            transcription_json.get("treatment_history", ""),
-            transcription_json.get("addiction_history", ""),
-            transcription_json.get("family_history", ""),
-            transcription_json.get("history_of_similar_complaints", ""),
-            transcription_json.get("comorbidities", ""),
-            transcription_json.get("operative_history", ""),
-            transcription_json.get("temperature", ""),
-            transcription_json.get("pulse", ""),
-            transcription_json.get("bp", ""),
-            transcription_json.get("rr", ""),
-            transcription_json.get("spo2", ""),
-            transcription_json.get("other_notes", "")
+                transcription_json.get("patient_id", ""),
+                transcription_json.get("doctor_id", ""),
+                transcription_json.get("visit_timestamp", ""),
+                transcription_json.get("history_of_presenting_illness", ""),
+                transcription_json.get("treatment_history", ""),
+                transcription_json.get("addiction_history", ""),
+                transcription_json.get("family_history", ""),
+                transcription_json.get("history_of_similar_complaints", ""),
+                transcription_json.get("comorbidities", ""),
+                transcription_json.get("operative_history", ""),
+                transcription_json.get("temperature", ""),
+                transcription_json.get("pulse", ""),
+                transcription_json.get("bp", ""),
+                transcription_json.get("rr", ""),
+                transcription_json.get("spo2", ""),
+                transcription_json.get("other_notes", "")
             )
-
-    else:
-        transcription_json['admission_timestamp'] = created_at
-        insert_query = f"""
-        INSERT INTO {ADMITTED_PATIENT_RECORDS_TABLE} (
-            patient_id, doctor_id, admission_timestamp, temperature, pulse, bp, rr, spo2, other_notes
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-        """
-        values = (
-        # transcription_json.get("id", ""),
-        transcription_json.get("patient_id", ""),
-        transcription_json.get("doctor_id", ""),
-        transcription_json.get("admission_timestamp", ""),
-        transcription_json.get("temperature", ""),    
-        transcription_json.get("pulse", ""),
-        transcription_json.get("bp", ""),
-        transcription_json.get("rr", ""),
-        transcription_json.get("spo2", ""),
-        transcription_json.get("other_notes", "")
-        )
+        else:
+            transcription_json['admission_timestamp'] = created_at
+            insert_query = f"""
+            INSERT INTO {ADMITTED_PATIENT_RECORDS_TABLE} (
+                patient_id, doctor_id, admission_timestamp, temperature, pulse, bp, rr, spo2, other_notes
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """
+            values = (
+                transcription_json.get("patient_id", ""),
+                transcription_json.get("doctor_id", ""),
+                transcription_json.get("admission_timestamp", ""),
+                transcription_json.get("temperature", ""),    
+                transcription_json.get("pulse", ""),
+                transcription_json.get("bp", ""),
+                transcription_json.get("rr", ""),
+                transcription_json.get("spo2", ""),
+                transcription_json.get("other_notes", "")
+            )
         
         cursor.execute(insert_query, values)
         conn.commit()
+        return True, None  # Success, no error
+        
+    except Exception as e:
+        try:
+            conn.rollback()  # Rollback the transaction on error
+        except:
+            pass  # If rollback fails, we still want to report the original error
+        return False, str(e)  # Failure, with error message
 
 @app.route("/process_transcription", methods = ["GET", 'POST']) 
 def process_transcription():
@@ -487,14 +492,21 @@ def process_transcription():
         transcription_json['patient_id'] = patient_id
         transcription_json['doctor_id'] = doctor_id
 
-        insert_transript_data(transcription_json, selected_option, created_at)
-        print("Patient record inserted successfully.")
-        
-        return jsonify({
-            "status": "success",
-            "message": "Patient record processed and inserted successfully",
-            "data": transcription_json
-        }), 200
+        success, error = insert_transript_data(transcription_json, selected_option, created_at, cursor, conn)
+        if success:
+            print("Patient record inserted successfully.")
+            return jsonify({
+                "status": "success",
+                "message": "Patient record processed and inserted successfully",
+                "data": transcription_json
+            }), 200
+        else:
+            print(f"Error processing transcription: {error}")
+            return jsonify({
+                "status": "error",
+                "message": "Failed to process transcription",
+                "error": error
+            }), 500
         
     except Exception as e:
         print(f"Error processing transcription: {str(e)}")
