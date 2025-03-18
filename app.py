@@ -418,25 +418,25 @@ def insert_transript_data(transcription_json, selected_option, created_at):
             transcription_json.get("other_notes", "")
             )
 
-        else:
-            transcription_json['admission_timestamp'] = created_at
-            insert_query = f"""
-            INSERT INTO {ADMITTED_PATIENT_RECORDS_TABLE} (
-                patient_id, doctor_id, admission_timestamp, temperature, pulse, bp, rr, spo2, other_notes
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """
-            values = (
-            # transcription_json.get("id", ""),
-            transcription_json.get("patient_id", ""),
-            transcription_json.get("doctor_id", ""),
-            transcription_json.get("admission_timestamp", ""),
-            transcription_json.get("temperature", ""),    
-            transcription_json.get("pulse", ""),
-            transcription_json.get("bp", ""),
-            transcription_json.get("rr", ""),
-            transcription_json.get("spo2", ""),
-            transcription_json.get("other_notes", "")
-            )
+    else:
+        transcription_json['admission_timestamp'] = created_at
+        insert_query = f"""
+        INSERT INTO {ADMITTED_PATIENT_RECORDS_TABLE} (
+            patient_id, doctor_id, admission_timestamp, temperature, pulse, bp, rr, spo2, other_notes
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """
+        values = (
+        # transcription_json.get("id", ""),
+        transcription_json.get("patient_id", ""),
+        transcription_json.get("doctor_id", ""),
+        transcription_json.get("admission_timestamp", ""),
+        transcription_json.get("temperature", ""),    
+        transcription_json.get("pulse", ""),
+        transcription_json.get("bp", ""),
+        transcription_json.get("rr", ""),
+        transcription_json.get("spo2", ""),
+        transcription_json.get("other_notes", "")
+        )
         
         cursor.execute(insert_query, values)
         conn.commit()
