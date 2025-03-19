@@ -7,7 +7,7 @@ from elasticsearch import Elasticsearch, helpers
 import re
 from langchain_core.prompts import PromptTemplate
 from langchain_core.output_parsers import StrOutputParser
-from langchain_deepseek import ChatDeepSeek
+from langchain_openai import ChatOpenAI
 import datetime
 
 load_dotenv()
@@ -29,7 +29,7 @@ ELASTIC_SEARCH_MAPPING_PATIENT_SEARCH = {
 }
 PATIENT_SEARCH_ALLOWED_SEARCH =  set(["patient_name", "patient_uid"])
 
-DEEPSEEK_API_KEY = os.environ.get("DEEPSEEK_API_KEY")
+OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY")
 
 
 
@@ -348,28 +348,28 @@ def create_prompt(patient_status="OPD"):
     
     return prompt_template
 
-def process_deepseek(prompt_template, transcription):
+def process_llm(prompt_template, transcription):
     
-    # initialize deepseek mode
-    llm = ChatDeepSeek(
-        model="deepseek-chat",
+    # initialize OpenAI mode
+    llm = ChatOpenAI(
+        model="gpt-4o-mini",
         temperature=0.1,
-        max_tokens=None,
+        # max_tokens=None,
         timeout=None,
         max_retries=2,
-        api_key=DEEPSEEK_API_KEY,
+        api_key=OPENAI_API_KEY,
         streaming = True
         # other params...
     )
-    print("Deepseek ChatDeepSeek initialized.")
+    print("OpenAI model initialized.")
     
     # initialize outputparser -> chain -> query_input
     output_parser = StrOutputParser()
     chain =  prompt_template | llm | output_parser
     
-    # output from deepseek
+    # output from OpenAI
     out = chain.invoke({"query": transcription})
-    print(f"Output from deepseek: {out}")
+    print(f"Output from OpenAI: {out}")
 
     return out
   
@@ -383,7 +383,7 @@ def clean_json_output(llm_output):
 
 def get_transcription_json(transcription, patient_status="OPD"):
     prompt_template = create_prompt(patient_status)
-    llm_output = process_deepseek(prompt_template, transcription)
+    llm_output = process_llm(prompt_template, transcription)
     cleaned_output = clean_json_output(llm_output)
     return cleaned_output
 
