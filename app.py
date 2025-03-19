@@ -148,6 +148,7 @@ def filter_patients():
 
     # mapping_response = client.indices.put_mapping(index=ELASTIC_SEARCH_INDEX_NAME_PATIENT_SEARCH, body=ELASTIC_SEARCH_MAPPING_PATIENT_SEARCH)
     patient_query_text = "*"+patient_query_text+"*"
+    
     query = {"query":
          {
              "wildcard":
@@ -448,6 +449,7 @@ def insert_transript_data(transcription_json, selected_option, created_at, curso
 
 @app.route("/process_transcription", methods = ["GET", 'POST']) 
 def process_transcription():
+    print('hello')
     # Input validation
     if request.method == "GET":
         patient_transcription = request.args.get("text", "").strip()
@@ -462,6 +464,13 @@ def process_transcription():
         patient_id = (data.get("patient_id") or "").strip()
         doctor_id = (data.get("doctor_id") or "").strip()
         created_at = (data.get("created_at") or "").strip()
+    
+    print(patient_transcription)
+    print(selected_option)
+    print(doctor_id)
+    print(created_at)
+    print(patient_id)
+
 
     # Validate required fields
     if not patient_transcription:
@@ -482,9 +491,9 @@ def process_transcription():
     conn = None
     cursor = None
     try:
-        conn = get_db_connection(DATABASE_NAME)
-        print('Connection established')
-        cursor = conn.cursor()
+        # conn = get_db_connection(DATABASE_NAME)
+        # print('Connection established')
+        # cursor = conn.cursor()
         
         transcription_json = get_transcription_json(patient_transcription, selected_option)
         print(f"Transcription JSON: {transcription_json}")
@@ -518,7 +527,7 @@ def process_transcription():
         print(f"Error processing transcription: {str(e)}")
         return jsonify({
             "status": "error",
-            "message": "Failed to process transcription",
+            "message": "Failed to process transcription check checkckepfhioasdhbnf",
             "error": str(e)
         }), 500
     finally:
@@ -526,6 +535,163 @@ def process_transcription():
             cursor.close()
         if conn:
             conn.close()
+        
+
+
+@app.route("/add_new_patient", methods = ["GET", 'POST'])
+def add_new_patient():
+    '''
+    Add new patient APO
+    Inserts a new patient record into the PATIENT_BASIC_INFO_TABLE in the database.
+    
+    params:
+    - patient_uid: (string) Required. (ADHAAR?UID)
+    - occupation: (string) Optional. 
+    - income: (string) Optional.
+    - contact: (string) Required. 
+    - addr: (string) Optional.
+    - patient_name: (string) Required. 
+    - age: (string) Required. 
+    - gender: (string) Required. 
+
+    '''
+    if request.method == "GET":
+        data = {
+            "patient_uid": request.args.get("patient_uid", "").strip(),   #required (AADHAR)
+            "occupation": request.args.get("occupation", " ").strip(),
+            "income": request.args.get("income", " ").strip(),
+            "contact": request.args.get("contact", " ").strip(),  #required
+            "addr": request.args.get("addr", " ").strip(),
+            "patient_name": request.args.get("patient_name", " ").strip(),   #required
+            "age": request.args.get("age", " ").strip(),    #  required (i think curr not requried in table)
+            "gender": request.args.get("gender", " ").strip(),  # required
+        }
+    else:  # POST method
+        data = request.get_json(silent=True) or {}
+        # Ensure strings are stripped
+        for key, value in data.items():
+            if isinstance(value, str):
+                data[key] = value.strip()
+    
+     # List the required fields
+    required_fields = ["patient_uid", "contact", "patient_name", "age", "gender"]
+
+    # Check for missing/empty required fields
+    for field in required_fields:
+        if not data.get(field):  # Empty string or None
+            return jsonify({"error": f"Field '{field}' is required"}), 400
+    
+    patient_name = data["patient_name"]
+    patient_uid = data.get("patient_uid")   # not null but can be empty
+    occupation = data.get("occupation") or ""
+    contact = data.get("contact") or ""
+    addr = data.get("addr") or ""
+    gender = data.get("gender")
+    income = data.get("income") or " "
+
+     # Age
+    age_val = data.get("age") or None
+    if age_val:
+        try:
+            age_val = int(age_val)
+        except ValueError:
+            return jsonify({"error": "age must be a valid integer"}), 400
+
+     # Income
+    income_val = data.get("income") or None
+    if income_val:
+        try:
+            income_val = float(income_val)  # or decimal.Decimal(...)
+        except ValueError:
+            return jsonify({"error": "income must be a valid decimal/float"}), 400
+        
+    # Set created_at and updated_at to now if not supplied
+    created_at = datetime.datetime.now()
+    updated_at = datetime.datetime.now()
+
+    # Build a response dict
+    new_patient = {
+        "id": patient_uid,
+        "patient_uid": patient_uid,
+        "occupation": occupation,
+        "income": income_val,
+        "contact": contact,
+        "addr": addr,
+        "patient_name": patient_name,
+        "age": age_val,
+        "gender": gender,
+        "created_at": created_at,
+        "updated_at": updated_at
+    }
+    
+
+    print(type(new_patient["created_at"]))
+    conn = None
+    cursor = None
+
+    try:
+        conn = get_db_connection(DATABASE_NAME)
+        cursor = conn.cursor()
+        print(cursor)
+        insert_query = f"""
+            INSERT INTO {PATIENT_BASIC_INFO_TABLE} (
+                patient_uid,
+                occupation,
+                income,
+                contact,
+                addr,
+                patient_name,
+                age,
+                gender,
+                created_at,
+                updated_at
+            ) VALUES ( ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """
+
+        values = (
+            patient_uid,
+            occupation,
+            income_val,
+            contact,
+            addr,
+            patient_name,
+            age_val,
+            gender,
+            created_at,
+            updated_at
+        )
+
+        cursor.execute(insert_query, values)
+        conn.commit()
+
+        
+
+        return jsonify({
+            "status": "success",
+            "message": "New patient added successfully",
+            "data": new_patient
+        }), 200
+
+    except Exception as e:
+        
+        if conn:
+            try:
+                conn.rollback()
+            except Exception as rb_err:
+                print("Rollback failed:", rb_err)
+        return jsonify({
+            "status": "error",
+            "message": "Failed to add new patient",
+            "error": str(e)
+        }), 500
+    finally:
+        if cursor:
+            cursor.close()
+        if conn:
+            conn.close()
+
+
+
 
 @app.route("/get_latest_patient_details", methods = ["GET", 'POST']) 
 def get_latest_patient_details():
@@ -609,5 +775,5 @@ def get_latest_patient_details():
             conn.close()
 
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=8000)
+    app.run(host="0.0.0.0", port=8000, debug = True)
     # webview.start()
