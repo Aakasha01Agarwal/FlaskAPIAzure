@@ -633,6 +633,21 @@ def add_new_patient():
         conn = get_db_connection(DATABASE_NAME)
         cursor = conn.cursor()
         print(cursor)
+
+        # Check if a patient with the given patient_uid already exists
+        select_query = f"SELECT * FROM {PATIENT_BASIC_INFO_TABLE} WHERE patient_uid = ?"
+        cursor.execute(select_query, (patient_uid,))
+        row = cursor.fetchone()
+        if row:
+            columns = [col[0] for col in cursor.description]
+            existing_patient = dict(zip(columns, row))
+            return jsonify({
+                "status": "error",
+                "message": "Patient already present",
+                "data": existing_patient
+            }), 400
+        
+        
         insert_query = f"""
             INSERT INTO {PATIENT_BASIC_INFO_TABLE} (
                 patient_uid,
