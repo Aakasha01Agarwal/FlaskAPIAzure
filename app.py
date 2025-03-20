@@ -9,16 +9,19 @@ from langchain_core.prompts import PromptTemplate
 from langchain_core.output_parsers import StrOutputParser
 from langchain_openai import ChatOpenAI
 import datetime
+from flask_cors import CORS
 
 load_dotenv()
 app = Flask(__name__)
+CORS(app)
 DATABASE_NAME = "doctor-detail"
 DOCTOR_BASIC_INFO_TABLE = "doctor_basic_info"
 PATIENT_BASIC_INFO_TABLE = "patient_basic_info"
 OPD_RECORDS_TABLE = "opd_records"
 ADMITTED_PATIENT_RECORDS_TABLE = "admitted_patient_records"
 ELASTIC_SEARCH_API = os.environ.get("ELASTIC_SEARCH_API")
-ELASTIC_SEARCH_ENDPOINT = os.environ.get("ELASTIC_SEARCH_ENDPOIT")
+ELASTIC_SEARCH_ENDPOINT = os.environ.get("ELASTIC_SEARCH_ENDPOINT")
+
 ELASTIC_SEARCH_INDEX_NAME_PATIENT_SEARCH = "patient_search"
 ELASTIC_SEARCH_MAPPING_PATIENT_SEARCH = {
     "properties": {
@@ -647,7 +650,7 @@ def add_new_patient():
                 "data": existing_patient
             }), 400
         
-        
+
         insert_query = f"""
             INSERT INTO {PATIENT_BASIC_INFO_TABLE} (
                 patient_uid,
@@ -679,7 +682,24 @@ def add_new_patient():
         cursor.execute(insert_query, values)
         conn.commit()
 
-        
+
+        try:
+            doc = {"ptient_name": patient_name, 
+                    "patient_uid": patient_uid}
+            elastic_client = Elasticsearch(ELASTIC_SEARCH_ENDPOINT,
+                            api_key=ELASTIC_SEARCH_API
+                                )
+
+            response = elastic_client.index(index=ELASTIC_SEARCH_INDEX_NAME_PATIENT_SEARCH, document=doc)
+           
+        except Exception as e:
+            return jsonify({
+                "status": "warning",
+                "message": "Patient added, but failed to index in Elasticsearch",
+                "data": new_patient,
+                "error": str(e)
+            }), 201
+
 
         return jsonify({
             "status": "success",
