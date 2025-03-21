@@ -5,3 +5,4 @@ flask_cors
 elasticsearch
 langchain-openai
 langchain-community
+aiohttp
