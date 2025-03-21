@@ -338,8 +338,9 @@ def insert_transript_data(transcription_json, selected_option, created_at, curso
     print("inserting data")
     try:
         if selected_option == "opd":
-            print(created_at, '=================inserting data=')
+            # print(created_at, '=================inserting data=')
             transcription_json['visit_timestamp'] = created_at
+            # print(transcription_json, '=================inserting data=')
             insert_query = f"""
             INSERT INTO {OPD_RECORDS_TABLE} (
                 patient_id, doctor_id, visit_timestamp, history_of_presenting_illness
@@ -351,19 +352,19 @@ def insert_transript_data(transcription_json, selected_option, created_at, curso
                 transcription_json.get("patient_id"),
                 transcription_json.get("doctor_id"),
                 transcription_json.get("visit_timestamp"),
-                transcription_json.get("history_of_presenting_illness", ""),
-                transcription_json.get("treatment_history", ""),
-                transcription_json.get("addiction_history", ""),
-                transcription_json.get("family_history", ""),
-                transcription_json.get("history_of_similar_complaints", ""),
-                transcription_json.get("comorbidities", ""),
-                transcription_json.get("operative_history", ""),
-                transcription_json.get("temperature", ""),
-                transcription_json.get("pulse", ""),
-                transcription_json.get("bp", ""),
-                transcription_json.get("rr", ""),
-                transcription_json.get("spo2", ""),
-                transcription_json.get("other_notes", "")
+                transcription_json.get("history_of_presenting_illness", None),
+                transcription_json.get("treatment_history", None),
+                transcription_json.get("addiction_history", None),
+                transcription_json.get("family_history", None),
+                transcription_json.get("history_of_similar_complaints", None),
+                transcription_json.get("comorbidities", None),
+                transcription_json.get("operative_history", None),
+                transcription_json.get("temperature", None),
+                transcription_json.get("pulse", None),
+                transcription_json.get("bp", None),
+                transcription_json.get("rr", None),
+                transcription_json.get("spo2", None),
+                transcription_json.get("other_notes", None)
             )
         else:
             transcription_json['admission_timestamp'] = created_at
@@ -376,12 +377,12 @@ def insert_transript_data(transcription_json, selected_option, created_at, curso
                 transcription_json.get("patient_id"),
                 transcription_json.get("doctor_id"),
                 transcription_json.get("admission_timestamp"),
-                transcription_json.get("temperature", ""),    
-                transcription_json.get("pulse", ""),
-                transcription_json.get("bp", ""),
-                transcription_json.get("rr", ""),
-                transcription_json.get("spo2", ""),
-                transcription_json.get("other_notes", "")
+                transcription_json.get("temperature", None),    
+                transcription_json.get("pulse", None),
+                transcription_json.get("bp", None),
+                transcription_json.get("rr", None),
+                transcription_json.get("spo2", None),
+                transcription_json.get("other_notes", None)
             )
         
         cursor.execute(insert_query, values)
@@ -532,9 +533,9 @@ def process_transcription():
     selected_option = data.get("selected_option").lower()
     patient_id = data.get("patient_id")
     doctor_id = data.get("doctor_id") 
-    created_at = datetime.datetime.now().strftime("%Y-%m-%dT%H:%M:%S.%f") + "0"
-    created_at = datetime.datetime.strptime(created_at, "%Y-%m-%dT%H:%M:%S.%f0")
-    print(created_at, '=====================sds=')
+    created_at = datetime.datetime.now()#.strftime("%Y-%m-%dT%H:%M:%S.%f")
+    #created_at = datetime.datetime.strptime(created_at, "%Y-%m-%dT%H:%M:%S.%f")
+    # print(created_at, '=====================sds=')
     if selected_option not in ["opd", "admitted"]:
         return jsonify({"error": f"Invalid selected_option: {selected_option}. Must be either 'OPD' or 'admitted'"}), 400
 
@@ -546,12 +547,18 @@ def process_transcription():
 
     if not patient_id.isdigit():
         return jsonify({"error": "Patient ID must be a valid integer"}), 400
+
+    else:
+        patient_id = int(patient_id)
     
     if len(doctor_id) == 0:
         return jsonify({"error": "Doctor ID is required"}), 400
 
     if not doctor_id.isdigit():
         return jsonify({"error": "Doctor ID must be a valid integer"}), 400
+
+    else:
+        doctor_id = int(doctor_id)
 
     conn = None
     cursor = None
