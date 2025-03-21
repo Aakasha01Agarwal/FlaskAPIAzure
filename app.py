@@ -9,9 +9,15 @@ from langchain_core.prompts import PromptTemplate
 from langchain_core.output_parsers import StrOutputParser
 from langchain_openai import ChatOpenAI
 import datetime
+import aiohttp
+from concurrent.futures import ThreadPoolExecutor
+from flask_cors import CORS
 
 load_dotenv()
 app = Flask(__name__)
+# CORS(app)   
+CORS(app, resources={r"/*": {"origins": "*"}})
+
 DATABASE_NAME = "doctor-detail"
 DOCTOR_BASIC_INFO_TABLE = "doctor_basic_info"
 PATIENT_BASIC_INFO_TABLE = "patient_basic_info"
@@ -31,7 +37,8 @@ PATIENT_SEARCH_ALLOWED_SEARCH =  set(["patient_name", "patient_uid"])
 
 OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY")
 
-
+# Create a thread pool for database operations
+db_pool = ThreadPoolExecutor(max_workers=5)
 
 def get_db_connection(DATABASE):
     server_name = "tcp:talkmedserver.database.windows.net"
@@ -51,69 +58,6 @@ def get_db_connection(DATABASE):
         f"{server};{db};{uid_str};{pwd_str};Trusted_connection=no"
     )
     return pyodbc.connect(connection_string)
-
-
-
-
-# API to search patient by name (supports partial and case-insensitive matching)
-# @app.route("/search_name", methods=["GET", "POST"])
-# def search_patient_by_name():
-#     if request.method == "GET":
-#         patient_name = request.args.get('name')
-#     else:  # POST request
-#         data = request.json
-#         patient_name = data.get('name')
-
-#     if not patient_name:
-#         return jsonify({"error": "Patient name is required"}), 400
-
-#     conn = None
-#     cursor = None
-#     try:
-#         conn = get_db_connection(DB_PATIENT)
-#         cursor = conn.cursor()
-        
-#         # Use LIKE with % for partial matching (case-insensitive)
-#         SQL_QUERY = "SELECT * FROM PatientRecords WHERE LOWER(PatientName) LIKE LOWER(?)"
-#         cursor.execute(SQL_QUERY, [f"%{patient_name}%"])
-#         rows = cursor.fetchall()
-
-#         if not rows:
-#             return jsonify({"response": "No patient found with this name"}), 404
-
-#         # Define column names based on database schema
-#         columns = [
-#             "RecordID", "PatientID", "PatientName", "Age", "Sex", "AdmissionDate",
-#             "AdmissionTime", "AdmissionStatus", "BloodPressure", "HeartRate",
-#             "RespiratoryRate", "OxygenSaturation", "Temperature", "Headache",
-#             "Fatigue", "Fever"
-#         ]
-        
-#         # Convert rows to dictionary format
-#         patients = []
-#         for row in rows:
-#             patient_data = dict(zip(columns, row))
-            
-#             # Convert DATE and TIME fields to string
-#             if isinstance(patient_data["AdmissionDate"], (pyodbc.Date, pyodbc.Timestamp)):
-#                 patient_data["AdmissionDate"] = str(patient_data["AdmissionDate"])
-#             if isinstance(patient_data["AdmissionTime"], pyodbc.Time):
-#                 patient_data["AdmissionTime"] = str(patient_data["AdmissionTime"])
-
-#             patients.append(patient_data)
-        
-#         return jsonify({"response": patients})
-
-#     except Exception as e:
-#         print(f"Error: {e}")
-#         return jsonify({"error": "Internal Server Error"}), 500
-#     finally:
-#         if cursor:
-#             cursor.close()
-#         if conn:
-#             conn.close()
-
-
 
 @app.route("/filter_patients", methods = ["GET", 'POST'])
 def filter_patients():
@@ -389,8 +333,9 @@ def get_transcription_json(transcription, patient_status="OPD"):
     return cleaned_output
 
 def insert_transript_data(transcription_json, selected_option, created_at, cursor, conn):
+    print("inserting data")
     try:
-        if selected_option == "OPD":
+        if selected_option == "opd":
             transcription_json['visit_timestamp'] = created_at
             insert_query = f"""
             INSERT INTO {OPD_RECORDS_TABLE} (
@@ -400,9 +345,9 @@ def insert_transript_data(transcription_json, selected_option, created_at, curso
             ) VALUES ( ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """
             values = (
-                transcription_json.get("patient_id", ""),
-                transcription_json.get("doctor_id", ""),
-                transcription_json.get("visit_timestamp", ""),
+                transcription_json.get("patient_id"),
+                transcription_json.get("doctor_id"),
+                transcription_json.get("visit_timestamp"),
                 transcription_json.get("history_of_presenting_illness", ""),
                 transcription_json.get("treatment_history", ""),
                 transcription_json.get("addiction_history", ""),
@@ -425,9 +370,9 @@ def insert_transript_data(transcription_json, selected_option, created_at, curso
             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
             """
             values = (
-                transcription_json.get("patient_id", ""),
-                transcription_json.get("doctor_id", ""),
-                transcription_json.get("admission_timestamp", ""),
+                transcription_json.get("patient_id"),
+                transcription_json.get("doctor_id"),
+                transcription_json.get("admission_timestamp"),
                 transcription_json.get("temperature", ""),    
                 transcription_json.get("pulse", ""),
                 transcription_json.get("bp", ""),
@@ -438,96 +383,240 @@ def insert_transript_data(transcription_json, selected_option, created_at, curso
         
         cursor.execute(insert_query, values)
         conn.commit()
+        print(f"Inserted record successfully in {selected_option} table")
         return True, None  # Success, no error
         
     except Exception as e:
+        print(f"error in inserting data: {e}")
         try:
+            print("rolling back")
             conn.rollback()  # Rollback the transaction on error
         except:
             pass  # If rollback fails, we still want to report the original error
         return False, str(e)  # Failure, with error message
 
+def validate_field_data_type(field_name, value):
+    """
+    Validates the data type of a field and returns (processed_value, error_message)
+    Always returns a valid value, with any issues noted in error_message
+    """
+    if value is None or value == "":
+        return value, None
+
+    ##out of str datatype cols, adding only bp as it is the only that can be float
+
+    validation_rules = {
+        "temperature": {
+            "type": float,
+            "range": (80, 120),
+            "default": 0.0, # to signify an error has occurred;
+            "error": "Temperature must be between 80°F and 120°F"
+        },
+        "pulse": {
+            "type": int,
+            "range": (0, 1000),
+            "default": 0, # to signify an error has occurred;
+            "error": "Pulse must be between 0 and 1000 bpm"
+        },
+        "rr": {
+            "type": int,
+            "range": (0, 100), 
+            "default": 0, # to signify an error has occurred;
+            "error": "Respiratory rate must be between 0 and 100"
+        },
+        "spo2": {
+            "type": float,
+            "range": (0, 100),
+            "default": 0.0, # to signify an error has occurred;
+            "error": "SpO2 must be between 0% and 100%"
+        },
+        "bp": {
+            "type": str,
+            #"pattern": r'^\d{2,3}/\d{2,3}\s*(?:mmHg)?$',
+            "default": "NA", # to signify an error has occurred;
+            #"error": "Blood pressure must be in format '120/80 mmHg'"
+        }
+    }
+
+    if field_name in validation_rules:
+        rule = validation_rules[field_name]
+        processed_value = value
+        # Type validation with default value
+        try:
+            if rule["type"] == str:
+                processed_value = str(value)
+            elif rule["type"] == float:
+                processed_value = float(value)
+            elif rule["type"] == int:
+                processed_value = int(value)  # Handle decimal strings
+        except (ValueError, TypeError):
+            print(value, '=========================')
+            processed_value = rule["default"]
+            return processed_value, f"{field_name} must be a {rule['type'].__name__}, using default value {rule['default']}"
+
+        # Range validation for numeric fields
+        ## currently defaulting to 0 for all invalid values as there is some 
+        ##range predefined in AzureSQL. Getting overflow error otherwise.
+
+        if "range" in rule:
+            if not (rule["range"][0] <= processed_value <= rule["range"][1]):
+                processed_value = rule["default"]
+                return processed_value, rule["error"] + f", using default value {rule['default']}"
+
+        # Pattern validation for string fields
+        # if "pattern" in rule:
+        #     if not re.match(rule["pattern"], processed_value):
+        #         processed_value = rule["default"]
+        #         return processed_value, rule["error"] + f", using default value {rule['default']}"
+
+        return processed_value, None
+
+    # For non-validated fields, return as is
+    return value, None
+
+def validate_transcription_data(transcription_json, selected_option):
+    """
+    Validates the transcription data and returns (processed_data, validation_notes)
+    Always processes the data, with any issues noted in validation_notes
+    """
+    processed_data = {}
+    validation_notes = []
+
+    # Validate all fields that are present
+    for field, value in transcription_json.items():
+        processed_value, error_msg = validate_field_data_type(field, value)
+        processed_data[field] = processed_value
+        
+        if error_msg:
+            validation_notes.append(error_msg)
+    print(processed_data, '=========================')
+    # Add validation notes to other_notes if any
+    if validation_notes:
+        existing_notes = transcription_json.get("other_notes", "")
+        processed_data["other_notes"] = (
+            f"{existing_notes}\nValidation Notes: " + 
+            "; ".join(validation_notes)
+        ).strip()
+
+    return processed_data, validation_notes
+
 @app.route("/process_transcription", methods = ["GET", 'POST']) 
 def process_transcription():
-    print('hello')
     # Input validation
     if request.method == "GET":
         patient_transcription = request.args.get("text", "").strip()
         selected_option = request.args.get("selected_option", "").strip()
         patient_id = request.args.get("patient_id", "").strip()
         doctor_id = request.args.get("doctor_id", "").strip()
-        created_at = request.args.get("created_at", "").strip()
     else:  # POST method
         data = request.get_json(silent=True) or {}
-        patient_transcription = (data.get("text") or "").strip()
-        selected_option = (data.get("selected_option") or "").strip()
-        patient_id = (data.get("patient_id") or "").strip()
-        doctor_id = (data.get("doctor_id") or "").strip()
-        created_at = (data.get("created_at") or "").strip()
+        # Ensure strings are stripped
+        for key, value in data.items():
+            if isinstance(value, str):
+                data[key] = value.strip()
+            else:
+                data[key] = str(value).strip()
     
-    print(patient_transcription)
-    print(selected_option)
-    print(doctor_id)
-    print(created_at)
-    print(patient_id)
+    # List the required fields
+    required_fields = ["text", "selected_option", "patient_id", "doctor_id"]
 
+    # Check for missing/empty required fields
+    for field in required_fields:
+        if not data.get(field):  # Empty string or None
+            return jsonify({"error": f"Field '{field}' is required"}), 400
+    
+    patient_transcription = data.get("text")
+    selected_option = data.get("selected_option").lower()
+    patient_id = data.get("patient_id")
+    doctor_id = data.get("doctor_id") 
+    created_at = datetime.datetime.now().strftime("%Y-%m-%dT%H:%M:%S.%f") + "0"
+    created_at = datetime.datetime.strptime(created_at, "%Y-%m-%dT%H:%M:%S.%f0")
 
-    # Validate required fields
-    if not patient_transcription:
+    if selected_option not in ["opd", "admitted"]:
+        return jsonify({"error": f"Invalid selected_option: {selected_option}. Must be either 'OPD' or 'admitted'"}), 400
+
+    if len(patient_transcription) == 0:
         return jsonify({"error": "Patient transcription text is required"}), 400
-    if not selected_option:
-        return jsonify({"error": "Selected option is required"}), 400
-    if not patient_id:
-        return jsonify({"error": "Patient ID is required"}), 400
-    if not doctor_id:
-        return jsonify({"error": "Doctor ID is required"}), 400
-    if not created_at:
-        return jsonify({"error": "Created timestamp is required"}), 400
     
-    # Validate selected_option
-    if selected_option not in ["OPD", "admitted"]:
-        return jsonify({"error": "Invalid selected_option. Must be either 'OPD' or 'admitted'"}), 400
+    if len(patient_id) == 0:
+        return jsonify({"error": "Patient ID is required"}), 400
+
+    if not patient_id.isdigit():
+        return jsonify({"error": "Patient ID must be a valid integer"}), 400
+    
+    if len(doctor_id) == 0:
+        return jsonify({"error": "Doctor ID is required"}), 400
+
+    if not doctor_id.isdigit():
+        return jsonify({"error": "Doctor ID must be a valid integer"}), 400
 
     conn = None
     cursor = None
+    transcription_json = {}
     try:
-        # conn = get_db_connection(DATABASE_NAME)
-        # print('Connection established')
-        # cursor = conn.cursor()
-        
-        transcription_json = get_transcription_json(patient_transcription, selected_option)
+        # Run transcription processing and database connection in parallel using ThreadPoolExecutor
+        with ThreadPoolExecutor(max_workers=2) as executor:
+            transcription_future = executor.submit(
+                get_transcription_json,
+                patient_transcription,
+                selected_option
+            )
+            
+            db_future = executor.submit(
+                get_db_connection,
+                DATABASE_NAME
+            )
+            
+            # Get results from both futures
+            transcription_json = transcription_future.result()
+            conn = db_future.result()
+
+        print('Connection established')
+        cursor = conn.cursor()
         print(f"Transcription JSON: {transcription_json}")
 
-        transcription_json['patient_id'] = patient_id
-        transcription_json['doctor_id'] = doctor_id
+        # Validate the transcription data
+        processed_data, validation_notes = validate_transcription_data(
+            transcription_json, 
+            selected_option
+        )
+
+        print(f"Validation notes: {validation_notes}")
+        # Add metadata to processed data
+        processed_data['patient_id'] = patient_id
+        processed_data['doctor_id'] = doctor_id
+        # processed_data['created_at'] = created_at
+
+        # Insert the processed data
+        success, error = insert_transript_data(
+            processed_data,
+            selected_option,
+            created_at,
+            cursor,
+            conn
+        )
+
+        if not success:
+            return jsonify({
+                "status": "error",
+                "message": "Failed to insert record",
+                "error": error,
+                "processed_data": processed_data,
+                "validation_notes": validation_notes
+            }), 500
 
         return jsonify({
-                "status": "success",
-                "message": "Patient record processed and inserted successfully",
-                "data": transcription_json
-            }), 200
-
-        # success, error = insert_transript_data(transcription_json, selected_option, created_at, cursor, conn)
-        # if success:
-        #     print("Patient record inserted successfully.")
-        #     return jsonify({
-        #         "status": "success",
-        #         "message": "Patient record processed and inserted successfully",
-        #         "data": transcription_json
-        #     }), 200
-        # else:
-        #     print(f"Error processing transcription: {error}")
-        #     return jsonify({
-        #         "status": "error",
-        #         "message": "Failed to process transcription",
-        #         "error": error
-        #     }), 500
+            "status": "success",
+            "message": "Patient record processed and inserted successfully",
+            "data": processed_data,
+            "validation_notes": validation_notes
+        }), 200
         
     except Exception as e:
         print(f"Error processing transcription: {str(e)}")
         return jsonify({
             "status": "error",
-            "message": "Failed to process transcription check checkckepfhioasdhbnf",
+            "message": "Failed to process transcription",
             "error": str(e)
         }), 500
     finally:
@@ -535,7 +624,7 @@ def process_transcription():
             cursor.close()
         if conn:
             conn.close()
-        
+
 
 
 @app.route("/add_new_patient", methods = ["GET", 'POST'])
