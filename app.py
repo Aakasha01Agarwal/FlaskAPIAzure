@@ -338,6 +338,7 @@ def insert_transript_data(transcription_json, selected_option, created_at, curso
     print("inserting data")
     try:
         if selected_option == "opd":
+            print(created_at, '=================inserting data=')
             transcription_json['visit_timestamp'] = created_at
             insert_query = f"""
             INSERT INTO {OPD_RECORDS_TABLE} (
@@ -533,7 +534,7 @@ def process_transcription():
     doctor_id = data.get("doctor_id") 
     created_at = datetime.datetime.now().strftime("%Y-%m-%dT%H:%M:%S.%f") + "0"
     created_at = datetime.datetime.strptime(created_at, "%Y-%m-%dT%H:%M:%S.%f0")
-
+    print(created_at, '=====================sds=')
     if selected_option not in ["opd", "admitted"]:
         return jsonify({"error": f"Invalid selected_option: {selected_option}. Must be either 'OPD' or 'admitted'"}), 400
 
