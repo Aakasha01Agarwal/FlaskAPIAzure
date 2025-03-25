@@ -781,7 +781,7 @@ def add_new_patient():
 
 
         try:
-            doc = {"ptient_name": patient_name, 
+            doc = {"patient_name": patient_name, 
                     "patient_uid": patient_uid}
             elastic_client = Elasticsearch(hosts = [ELASTIC_SEARCH_ENDPOINT],
                             api_key=ELASTIC_SEARCH_API
