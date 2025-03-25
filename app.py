@@ -87,7 +87,8 @@ def filter_patients():
         return jsonify({'response':[]})
     if selected_option not in PATIENT_SEARCH_ALLOWED_SEARCH:
         return jsonify({"error": "Invalid selected_option"}), 400
-    
+    print(f"ELASTIC_SEARCH_ENDPOINT: {ELASTIC_SEARCH_ENDPOINT}")
+    print(f"ELASTIC_SEARCH_API: {ELASTIC_SEARCH_API}")
     client = Elasticsearch(hosts = [ELASTIC_SEARCH_ENDPOINT],
                             api_key=ELASTIC_SEARCH_API
                                 )
